@@ -22,7 +22,7 @@ setup(
     author=info['__author__'],
     author_email=info['__author_email__'],
     author_url=info['__author_url__'],
-    python_requires='>=3.10',
+    python_requires='>=3.9',
     install_requires=requirements,
     packages=[
         'usync_gphotos',
