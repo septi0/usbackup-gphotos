@@ -1,0 +1,2 @@
+# TODO:
+- handle albums rename
