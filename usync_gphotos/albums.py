@@ -73,7 +73,7 @@ class Albums:
 
             # commit batch
             self._model.commit()
-            
+
             index_cnt += batch_index_cnt
 
             if not page_token:
