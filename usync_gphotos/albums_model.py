@@ -111,6 +111,8 @@ class AlbumsModel:
             f"WHERE {' AND '.join(where)}",
         )
 
+        placeholders['album_id'] = album_id
+
         with self._storage.execute(query, placeholders) as cursor:
             row = cursor.fetchone()
 
