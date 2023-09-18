@@ -335,8 +335,7 @@ class Albums:
         if media_item_meta['status'] != 'synced':
             raise ValueError('media item is not synced')
         
-        src_file_relative = os.path.join(relative_src_path, item_name)
-        src_file = os.path.join(self._media_items.dest_path, src_file_relative)
+        src_file = os.path.join(self._media_items.dest_path, relative_src_path, item_name)
         dest_path = os.path.join(self._dest_path, relative_dest_path, album_name)
         dest_file = os.path.join(dest_path, item_name)
 
@@ -353,8 +352,10 @@ class Albums:
         if not os.path.isdir(dest_path):
             os.makedirs(dest_path)
 
+        src_file_relative = os.path.relpath(src_file, dest_path)
+
         # create symbolic link
-        os.symlink(os.path.join('..', src_file_relative), dest_file)
+        os.symlink(src_file_relative, dest_file)
 
         return True
     
