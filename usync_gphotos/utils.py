@@ -29,7 +29,7 @@ def gen_batch_stats(t_start: float, t_end: float, processed: int, total: int) ->
     # calc estimated time left
     elapsed = (t_end - t_start).total_seconds()
     eta = round((elapsed / processed) * (total - processed), 2)
-    # format eta
-    eta_str = str(timedelta(seconds=eta))
+    # format eta, min 1s
+    eta_str = str(timedelta(seconds=int(eta)))
 
     return (percentage_str, eta_str)
