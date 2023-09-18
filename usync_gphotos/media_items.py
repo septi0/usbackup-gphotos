@@ -3,6 +3,7 @@ import logging
 import asyncio
 import requests
 import tempfile
+import shutil
 from datetime import datetime
 from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
@@ -419,7 +420,8 @@ class MediaItems:
             os.makedirs(dest_path)
 
         # move tmp file to dest file
-        os.rename(tmp_file, dest_file)
+        # Note: don't use or.rename() as it will fail if directory is on different device
+        shutil.move(tmp_file, dest_file)
 
         # set file create / modify time
         os.utime(dest_file, (create_date_ts, modify_date_ts))
