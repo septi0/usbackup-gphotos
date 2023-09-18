@@ -53,8 +53,7 @@ class USyncGPhotosIdentity:
         os.remove(self._lock_file)
 
     def index(self, options: dict) -> None:
-        self._gauth.ensure_valid_token()
-        self._update_aseting('token_hash', self._gauth.get_token_hash())
+        self._gauth.ensure_valid_auth()
 
         # index media items
         if not options.get('no_media_items'):
@@ -92,8 +91,7 @@ class USyncGPhotosIdentity:
                 self._logger.info(f'No albums indexed')
 
     def sync(self, options: dict) -> None:
-        self._gauth.ensure_valid_token()
-        self._update_aseting('token_hash', self._gauth.get_token_hash())
+        self._gauth.ensure_valid_auth()
 
         if not options.get('no_index'):
             self.index({
@@ -127,7 +125,6 @@ class USyncGPhotosIdentity:
         self._logger.info(f'Authenticating')
 
         self._gauth.issue_new_token()
-        self._update_aseting('token_hash', self._gauth.get_token_hash())
 
     def _setup(self, config: dict) -> None:
         data_dir = self._gen_data_dir(config.get('data_dir', ''))
@@ -149,8 +146,10 @@ class USyncGPhotosIdentity:
 
         gauth = GAuth(auth_file, token_hash, auth_scopes, logger=self._logger)
 
+        gauth.set_auth_callback(self._update_token_hash)
+
         if config.get('webserver'):
-            gauth.enable_webserver(port=config.get('webserver_port', 8080))
+            gauth.set_webserver(port=config.get('webserver_port', 8080))
 
         google_api = GPhotosApi(gauth=gauth, logger=self._logger)
 
@@ -188,3 +187,6 @@ class USyncGPhotosIdentity:
     
     def _update_aseting(self, key: str, value: str) -> int:
         return self._settings_model.update_aseting(key, value)
+    
+    def _update_token_hash(self, token_hash: str) -> None:
+        self._update_aseting('token_hash', token_hash)

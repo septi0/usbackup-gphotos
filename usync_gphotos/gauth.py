@@ -8,9 +8,12 @@ import base64
 from urllib.parse import urlparse, parse_qs
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-__all__ = ['GAuth', 'GAuthException']
+__all__ = ['GAuth', 'GAuthError', 'GAuthValueError']
 
-class GAuthException(Exception):
+class GAuthError(Exception):
+    pass
+
+class GAuthValueError(Exception):
     pass
 
 class GAuth:
@@ -26,6 +29,7 @@ class GAuth:
         self._client_id_hash: str = hashlib.md5(self._client_id.encode()).hexdigest()
         self._client_secret: str = self._credentials.get('client_secret', '')
 
+        self._auth_callback: callable = None
         self._use_webserver: bool = False
         self._listen_port: int = 8080
 
@@ -33,33 +37,34 @@ class GAuth:
     def access_token(self) -> str:
         return self._token.get('access_token', '')
     
-    def enable_webserver(self, *, port: int = 8080) -> None:
+    def set_auth_callback(self, callback: callable) -> None:
+        self._auth_callback = callback
+    
+    def set_webserver(self, *, port: int = 8080) -> None:
         self._use_webserver = True
         self._listen_port = port
     
-    def get_token_hash(self) -> str:
-        return base64.b64encode(json.dumps(self._token).encode()).decode()
-    
-    def ensure_valid_token(self) -> None:
+    def ensure_valid_auth(self) -> None:
         if not self._token_exists():
-            self._logger.info(f'No access token found, authentication is required')
-            self._issue_new_token()
-        elif self._token_expired():
-            self._logger.info(f'Access token expired, refreshing')
+            raise GAuthError('No access token found. Please use the "auth" command to authenticate first')
+        
+        if self._token_expired():
             self._refresh_existing_token()
 
     def refresh_token(self) -> None:
+        self._logger.info(f'Access token expired, refreshing')
         self._refresh_existing_token()
 
     def issue_new_token(self) -> None:
+        self._logger.info(f'Issuing new access token')
         self._issue_new_token()
 
     def _parse_credentials(self, credentials_file: str) -> dict:
         if not credentials_file:
-            raise ValueError('Credentials file not provided')
+            raise GAuthValueError('Credentials file not provided')
 
         if not os.path.isfile(credentials_file):
-            raise FileNotFoundError(f'Credentials file {credentials_file} not found')
+            raise GAuthValueError(f'Credentials file {credentials_file} not found')
 
         # read file and json decode
         with open(credentials_file, 'r') as f:
@@ -73,12 +78,15 @@ class GAuth:
 
         return json.loads(base64.b64decode(token_hash.encode()).decode())
     
+    def _encrypt_token(self) -> str:
+        return base64.b64encode(json.dumps(self._token).encode()).decode()
+    
     def _token_exists(self) -> bool:
         return True if self._token.get('access_token') else False
     
     def _token_expired(self) -> bool:
         if not self._token.get('access_token'):
-            raise ValueError('Access token not found')
+            raise GAuthError('Access token not found')
 
         if self._token.get('expires_at') < time.time():
             return True
@@ -87,11 +95,16 @@ class GAuth:
     
     def _refresh_existing_token(self) -> None:
         if not self._token.get('refresh_token'):
-            raise ValueError('Refresh token not found')
+            raise GAuthError('Refresh token not found')
         
         token = self._gen_oauth2_token('refresh_token', refresh_token=self._token.get('refresh_token'))
 
-        self._update_token(token)
+        self._update_token(token, replace=True)
+
+        if token:
+            self._logger.info(f'Access token refreshed')
+        else:
+            raise GAuthError('Could not refresh token. Please use the "auth" command to authenticate again')
 
     def _issue_new_token(self) -> None:
         url = self._gen_auth_url()
@@ -105,9 +118,15 @@ class GAuth:
 
         token = self._gen_oauth2_token('authorization_code', code=code)
 
-        print('Authentication successful')
-
-        self._update_token(token, replace=True)
+        if token:
+            self._update_token({
+                'access_token': token['access_token'],
+                'expires_at': token['expires_at'],
+            })
+            self._logger.info(f'Access token issued')
+        else:
+            self._update_token({}, replace=True)
+            raise GAuthError('Could not issue token. Please use the "auth" command to authenticate again')
 
     def _gen_auth_url(self) -> str:
         params = {
@@ -162,31 +181,36 @@ class GAuth:
         auth_url = input()
 
         if not auth_url:
-            raise ValueError('Invalid url')
+            raise GAuthValueError('Invalid url')
 
         parsed_url = urlparse(auth_url)
 
         if not parsed_url.query:
-            raise ValueError('Invalid url')
+            raise GAuthValueError('Invalid url')
 
         query_params = parse_qs(parsed_url.query)
 
         if not query_params.get('code'):
-            raise ValueError('Invalid url')
+            raise GAuthValueError('Invalid url')
 
         code = query_params.get('code')[0]
 
         return code
     
-    def _update_token(self, token: dict, *, replace = False) -> None:
-        if not token:
-            raise ValueError('Token not provided')
-        
+    def _update_token(self, data: dict, *, replace: bool = False) -> None:
+        allowed_keys = ['access_token', 'refresh_token', 'scope', 'token_type', 'expires_at']
+
+        # filter allowed keys
+        data = {k: v for k, v in data.items() if k in allowed_keys}
+
         if replace:
-            self._token = token
+            self._token = data
         else:
-            self._token['access_token'] = token['access_token']
-            self._token['expires_at'] = token['expires_at']
+            for (tkey, tval) in data.items():
+                self._token[tkey] = tval
+
+        if self._auth_callback:
+            self._auth_callback(self._encrypt_token())
     
     def _gen_oauth2_token(self, grant_type: str, *, code: str = None, refresh_token: str = None) -> dict:
         post_params = {
@@ -196,14 +220,14 @@ class GAuth:
 
         if ('authorization_code' == grant_type):
             if not code:
-                raise ValueError('Code not provided')
+                raise GAuthValueError('Code not provided')
 
             post_params['grant_type'] = grant_type
             post_params['code'] = code
             post_params['redirect_uri'] = self._credentials['redirect_uris'][0] + ':' + str(self._listen_port)
         elif('refresh_token' == grant_type):
             if not refresh_token:
-                raise ValueError('Refresh token not provided')
+                raise GAuthValueError('Refresh token not provided')
             
             post_params['grant_type'] = grant_type
             post_params['refresh_token'] = refresh_token
@@ -212,16 +236,27 @@ class GAuth:
 
         self._logger.debug(f'OAuth2 token response: {response.text}')
 
+        if response.status_code == 400:
+            error = response.json().get('error', '')
+
+            # return empty token if refresh token is invalid
+            if 'invalid_grant' == error:
+                self._logger.warning('Invalid refresh token')
+                return {}
+
         if response.status_code != 200:
-            raise ValueError('Invalid response: ' + response.text)
+            raise GAuthError('Invalid response: ' + response.text)
         
         token = response.json()
 
-        required_keys = ['access_token', 'expires_in']
+        if 'authorization_code' == grant_type:
+            required_keys = ['access_token', 'refresh_token', 'expires_in']
+        elif 'refresh_token' == grant_type:
+            required_keys = ['access_token', 'expires_in']
 
         for key in required_keys:
             if not token.get(key):
-                raise ValueError(f'Invalid token, missing {key}')
+                raise GAuthError(f'Invalid token, missing {key}')
 
         token['expires_at'] = time.time() + token['expires_in']
 
