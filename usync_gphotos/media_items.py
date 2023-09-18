@@ -112,6 +112,9 @@ class MediaItems:
     def delete_stale(self) -> None:
         limit = 100
 
+        total = self._model.get_media_items_meta_cnt(status='stale')
+        processed = 0
+
         while True:
             to_delete = self._model.get_media_items_meta(limit=limit, status='stale')
 
@@ -126,7 +129,10 @@ class MediaItems:
             # commit batch
             self._model.commit()
 
-            self._logger.info(f'Media items batch delete: deleted {len(to_delete)}')
+            processed += len(to_delete)
+            processed_percent = round(processed / total * 100, 2)
+
+            self._logger.info(f'Media items batch delete ({processed_percent}%): deleted {len(to_delete)}')
 
     def get_item_meta(self, *, media_id: int = None, remote_id: str = None) -> dict:
         return self._model.get_media_item_meta(media_id=media_id, remote_id=remote_id)
@@ -149,6 +155,15 @@ class MediaItems:
             self._model.commit()
 
         return indexed
+    
+    def ignore_items(self, media_items: list) -> None:
+        for media_item in media_items:
+            self._model.update_media_item_meta(media_item['media_id'], status='ignored')
+
+        self._model.commit()
+
+    def reset_ignored_items(self) -> int:
+        return self._model.reset_ignored_media_items()
 
     def _get_canonicalized_name(self, file_name: str, path: str) -> str:
         unique = 1
@@ -243,7 +258,7 @@ class MediaItems:
         if not media_item_meta:
             return True
 
-        if media_item_meta['status'] not in ['synced', 'pending_sync']:
+        if media_item_meta['status'] not in ['synced', 'pending_sync', 'ignored']:
             return True
 
         # TODO: check for mdate changes when it will be available in API
@@ -281,7 +296,8 @@ class MediaItems:
             'failed': 0,
         }
 
-        remaining = self._model.get_media_items_meta_cnt(status=['pending_sync', 'sync_error'])
+        total = self._model.get_media_items_meta_cnt(status=['pending_sync', 'sync_error'])
+        processed = 0
 
         while True:
             to_sync = await self._get_media_items_to_sync(limit=limit, offset=offset)
@@ -332,9 +348,10 @@ class MediaItems:
             info['skipped'] += batch_info['skipped']
             info['failed'] += batch_info['failed']
 
-            remaining -= len(to_sync)
+            processed += len(to_sync)
+            processed_percent = round(processed / total * 100, 2)
 
-            self._logger.info(f'Media items batch sync: synced {batch_info["synced"]}, skipped {batch_info["skipped"]}, failed {batch_info["failed"]}. Remaining: {remaining}')
+            self._logger.info(f'Media items batch sync ({processed_percent}%): synced {batch_info["synced"]}, skipped {batch_info["skipped"]}, failed {batch_info["failed"]}')
 
         self._clean_tmp_dir()
 

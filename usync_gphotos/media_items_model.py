@@ -6,6 +6,8 @@ class MediaItemsModel:
     def __init__(self, storage: Storage) -> None:
         self._storage: Storage = storage
 
+        self._allowed_status = ['pending_sync', 'sync_error', 'synced', 'stale', 'ignored']
+
         self._ensure_table()
 
     def commit(self) -> None:
@@ -128,6 +130,9 @@ class MediaItemsModel:
             if key not in allowed_keys:
                 raise ValueError(f'Invalid key "{key}"')
             
+        if 'status' in kwargs and kwargs['status'] not in self._allowed_status:
+            raise ValueError(f'Invalid status "{kwargs["status"]}"')
+            
         placeholders = {}
             
         update = self._storage.gen_update_fields(kwargs, placeholders)
@@ -160,6 +165,16 @@ class MediaItemsModel:
         
         with self._storage.execute(query, placeholders) as cursor:
             return cursor.rowcount
+        
+    def reset_ignored_media_items(self) -> int:
+        query = (
+            "UPDATE media_items",
+            "SET status='pending_sync'",
+            "WHERE status='ignored'",
+        )
+        
+        with self._storage.execute(query) as cursor:
+            return cursor.rowcount
 
     def delete_media_item_meta(self, media_id: int) -> int:
         if not media_id:
@@ -191,6 +206,9 @@ class MediaItemsModel:
             status: str = None
         ) -> int:
         placeholders = {}
+
+        if status and status not in self._allowed_status:
+            raise ValueError(f'Invalid status "{status}"')
 
         query = (
             "INSERT INTO media_items (remote_id, name, cname, mime_type, create_date, modify_date, path, index_date, last_checked, status)",

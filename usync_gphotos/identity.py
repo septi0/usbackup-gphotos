@@ -113,6 +113,12 @@ class USyncGPhotosIdentity:
             concurrency=options.get('concurrency', 20),
         )
 
+    def auth(self) -> None:
+        self._logger.info(f'Authenticating')
+
+        self._gauth.issue_new_token()
+
+    def maintenance(self, options: dict) -> None:
         # delete stale media
         if options.get('delete_stale'):
             self._logger.info(f'Deleting stale albums')
@@ -121,10 +127,15 @@ class USyncGPhotosIdentity:
             self._logger.info(f'Deleting stale media items')
             self._media_items.delete_stale()
 
-    def auth(self) -> None:
-        self._logger.info(f'Authenticating')
+        # ignore media items
+        if options.get('ignore_media_ids'):
+            self._logger.info(f'Ignoring media items')
+            self._media_items.ignore_items(options.get('ignore_media_ids'))
 
-        self._gauth.issue_new_token()
+        # reset ignored media items
+        if options.get('reset_ignored'):
+            self._logger.info(f'Resetting ignored media items')
+            self._media_items.reset_ignored_items()
 
     def _setup(self, config: dict) -> None:
         data_dir = self._gen_data_dir(config.get('data_dir', ''))

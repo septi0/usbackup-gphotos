@@ -58,6 +58,16 @@ class USyncGPhotosManager:
                 self._logger.info(f'Authentication for identity "{identity.name}" interrupted by user')
                 break
 
+    def maintenance(self, options: dict) -> None:
+        for identity in self._identities:
+            try:
+                identity.maintenance(options)
+            except Exception as e:
+                self._logger.exception(f'Maintenance for identity "{identity.name}" failed. Reason: {e}', exc_info=True)
+            except KeyboardInterrupt:
+                self._logger.info(f'Maintenance for identity "{identity.name}" interrupted by user')
+                break
+
     def _parse_config(self, config_files: list[str]) -> dict:
         if not config_files:
             config_files = [

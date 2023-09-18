@@ -23,7 +23,6 @@ def main():
     sync_parser.add_argument('--rescan', dest='rescan', help='Rescan all photos', action='store_true', default=False)
     sync_parser.add_argument('--album', dest='albums', action='append', help='Album name')
     sync_parser.add_argument('--concurrency', dest='concurrency', help='Concurrency', type=int, default=10)
-    sync_parser.add_argument('--delete-stale', dest='delete_stale', help='Delete stale items (photos not found in Google Photos anymore)', action='store_true', default=False)
 
     index_parser = subparsers.add_parser('index', help='Index photos')
     index_parser.add_argument('--no-media-items', dest='no_media_items', help='Skip media items sync', action='store_true', default=False)
@@ -32,6 +31,11 @@ def main():
     index_parser.add_argument('--album', dest='albums', action='append', help='Album name')
 
     auth_parser = subparsers.add_parser('auth', help='Authenticate')
+
+    maintenance_parser = subparsers.add_parser('maintenance', help='Maintenance')
+    maintenance_parser.add_argument('--delete-stale', dest='delete_stale', help='Delete stale items (photos not found in Google Photos anymore)', action='store_true', default=False)
+    maintenance_parser.add_argument('--ignore-media-id', dest='ignore_media_ids', action='append', help='Ignore media id')
+    maintenance_parser.add_argument('--reset-ignored', dest='reset_ignored', help='Reset ignored media ids', action='store_true', default=False)
 
     args = parser.parse_args()
 
@@ -59,7 +63,6 @@ def main():
             'rescan': args.rescan,
             'albums': args.albums,
             'concurrency': args.concurrency,
-            'delete_stale': args.delete_stale,
         })
     elif args.command == 'index':
         usync_gphotos.index({
@@ -70,5 +73,11 @@ def main():
         })
     elif args.command == 'auth':
         usync_gphotos.auth()
+    elif args.command == 'maintenance':
+        usync_gphotos.maintenance({
+            'delete_stale': args.delete_stale,
+            'ignore_media_ids': args.ignore_media_ids,
+            'reset_ignored': args.reset_ignored,
+        })
 
     sys.exit(0)

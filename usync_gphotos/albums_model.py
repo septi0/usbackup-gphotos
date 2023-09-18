@@ -6,6 +6,8 @@ class AlbumsModel:
     def __init__(self, storage: Storage) -> None:
         self._storage: Storage = storage
 
+        self._allowed_status = ['pending_sync', 'sync_error', 'synced', 'stale']
+
         self._ensure_table()
 
     def commit(self) -> None:
@@ -97,25 +99,22 @@ class AlbumsModel:
 
             return [dict(r) for r in rows]
     
-    def get_album_items_meta_cnt(self, album_id: int, *, status = None) -> int:
-        if not album_id:
-            raise ValueError('Missing album_id')
-        
+    def get_albums_items_meta_cnt(self, *, status=None, album_id: int = None) -> int:
         placeholders = {}
         where = ['1=1']
-        
-        where.append('album_id=:album_id')
 
         if status:
             where.append(self._storage.gen_in_condition('status', status, placeholders))
+
+        if album_id:
+            where.append('album_id=:album_id')
+            placeholders['album_id'] = album_id
         
         query = (
             "SELECT COUNT(album_id) AS cnt",
             "FROM albums_items",
             f"WHERE {' AND '.join(where)}",
         )
-
-        placeholders['album_id'] = album_id
 
         with self._storage.execute(query, placeholders) as cursor:
             row = cursor.fetchone()
@@ -166,6 +165,9 @@ class AlbumsModel:
             if key not in allowed_keys:
                 raise ValueError(f'Invalid key "{key}"')
             
+        if 'status' in kwargs and kwargs['status'] not in self._allowed_status:
+            raise ValueError(f'Invalid status "{kwargs["status"]}"')
+            
         placeholders = {}
             
         update = self._storage.gen_update_fields(kwargs, placeholders)
@@ -192,6 +194,9 @@ class AlbumsModel:
         for key in kwargs.keys():
             if key not in allowed_keys:
                 raise ValueError(f'Invalid key "{key}"')
+            
+        if 'status' in kwargs and kwargs['status'] not in self._allowed_status:
+            raise ValueError(f'Invalid status "{kwargs["status"]}"')
 
         placeholders = {}
 
@@ -307,6 +312,9 @@ class AlbumsModel:
             status: str = None,
         ) -> int:
         placeholders = {}
+
+        if status and status not in self._allowed_status:
+            raise ValueError(f'Invalid status "{status}"')
 
         query = (
             "INSERT INTO albums (remote_id, name, cname, size, cover_photo_id, path, index_date, last_checked, status)",

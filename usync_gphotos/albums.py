@@ -136,7 +136,7 @@ class Albums:
         if not album_meta:
             return True
         
-        album_items_cnt = self._model.get_album_items_meta_cnt(album_meta['album_id'])
+        album_items_cnt = self._model.get_albums_items_meta_cnt(album_id=album_meta['album_id'])
         
         synced = album_meta['status'] in ('synced', 'pending_sync')
         same_size = int(album_meta['size']) == int(album['mediaItemsCount']) == album_items_cnt
@@ -248,6 +248,9 @@ class Albums:
 
         self._logger.info(f'Syncing album "{album_meta["name"]}" with {album_meta["size"]} items')
 
+        total = self._model.get_albums_items_meta_cnt(album_id=album_id, status=['pending_sync', 'sync_error'])
+        processed = 0
+
         while True:
             to_sync = self._model.get_albums_items_meta(limit=limit, offset=offset, album_id=album_id, status=['pending_sync', 'sync_error'])
 
@@ -298,7 +301,10 @@ class Albums:
             info['skipped'] += batch_info['skipped']
             info['failed'] += batch_info['failed']
 
-            self._logger.info(f'Album items batch sync: synced {batch_info["synced"]}, skipped {batch_info["skipped"]}, failed {batch_info["failed"]}')
+            processed += len(to_sync)
+            processed_percent = round(processed / total * 100, 2)
+
+            self._logger.info(f'Album items batch sync ({processed_percent}%): synced {batch_info["synced"]}, skipped {batch_info["skipped"]}, failed {batch_info["failed"]}')
 
         return info
 
@@ -307,6 +313,10 @@ class Albums:
         relative_dest_path = album_meta.get('path')
         album_name = album_meta.get('cname')
         item_name = media_item_meta.get('cname')
+
+        if media_item_meta['status'] == 'ignored':
+            self._logger.debug(f'Skipping album item #{media_item_meta["media_id"]}. File is ignored')
+            return False
 
         if not relative_src_path:
             raise ValueError('missing source path')
@@ -365,6 +375,9 @@ class Albums:
     def _delete_stale_albums_items(self) -> None:
         limit = 100
 
+        total = self._model.get_albums_items_meta_cnt(status='stale')
+        processed = 0
+
         while True:
             to_delete = self._model.get_albums_items_meta(limit=limit, status='stale')
 
@@ -382,4 +395,7 @@ class Albums:
             # commit batch
             self._model.commit()
 
-            self._logger.info(f'Albums items batch delete: deleted {len(to_delete)}')
+            processed += len(to_delete)
+            processed_percent = round(processed / total * 100, 2)
+
+            self._logger.info(f'Albums items batch delete ({processed_percent}%): deleted {len(to_delete)}')
