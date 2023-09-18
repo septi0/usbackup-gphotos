@@ -16,7 +16,7 @@ class MediaItemsModel:
             raise ValueError('Missing media_id or remote_id')
         
         placeholders = {}
-        where = []
+        where = ['1=1']
         
         if media_id:
             where.append("media_id=:media_id")
@@ -42,9 +42,10 @@ class MediaItemsModel:
 
     def get_media_items_meta(self, *, limit: int = 100, offset: int = 0, status = None) -> list:
         placeholders = {}
-        where = []
+        where = ['1=1']
 
-        where.append(self._storage.gen_in_condition('status', status, placeholders))
+        if status:
+            where.append(self._storage.gen_in_condition('status', status, placeholders))
 
         query = (
             "SELECT *",
@@ -67,12 +68,13 @@ class MediaItemsModel:
         
     def get_media_items_meta_cnt(self, *, status = None) -> int:
         placeholders = {}
-        where = []
+        where = ['1=1']
 
-        where.append(self._storage.gen_in_condition('status', status, placeholders))
+        if status:
+            where.append(self._storage.gen_in_condition('status', status, placeholders))
 
         query = (
-            "SELECT COUNT(*)",
+            "SELECT COUNT(*) AS cnt",
             "FROM media_items",
             f"WHERE {' AND '.join(where)}",
         )
@@ -83,11 +85,11 @@ class MediaItemsModel:
             if not row:
                 return 0
 
-            return row[0]
+            return row['cnt']
         
     def search_media_item_meta(self, *, limit: int = 100, offset: int = 0, cname: str = None, path: str = None) -> list:
         placeholders = {}
-        where = []
+        where = ['1=1']
 
         if cname:
             where.append('cname=:cname')
@@ -144,7 +146,7 @@ class MediaItemsModel:
     
     def set_media_items_stale(self, *, last_checked: str = None) -> int:
         placeholders = {}
-        where = []
+        where = ['1=1']
 
         if last_checked:
             where.append('last_checked<:last_checked')

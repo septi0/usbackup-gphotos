@@ -16,7 +16,7 @@ class AlbumsModel:
             raise ValueError('Missing media_id or remote_id')
 
         placeholders = {}
-        where = []
+        where = ['1=1']
 
         if album_id:
             where.append('album_id=:album_id')
@@ -42,9 +42,10 @@ class AlbumsModel:
 
     def get_albums_meta(self, *, limit: int = 100, offset: int = 0, status = None) -> list:
         placeholders = {}
-        where = []
+        where = ['1=1']
 
-        where.append(self._storage.gen_in_condition('status', status, placeholders))
+        if status:
+            where.append(self._storage.gen_in_condition('status', status, placeholders))
 
         query = (
             "SELECT *",
@@ -67,9 +68,10 @@ class AlbumsModel:
     
     def get_albums_items_meta(self, *, limit: int = 100, offset: int = 0, status = None, album_id: int = None) -> list:
         placeholders = {}
-        where = []
+        where = ['1=1']
 
-        where.append(self._storage.gen_in_condition('status', status, placeholders))
+        if status:
+            where.append(self._storage.gen_in_condition('status', status, placeholders))
 
         if album_id:
             where.append('album_id=:album_id')
@@ -100,10 +102,12 @@ class AlbumsModel:
             raise ValueError('Missing album_id')
         
         placeholders = {}
-        where = []
+        where = ['1=1']
         
         where.append('album_id=:album_id')
-        where.append(self._storage.gen_in_condition('status', status, placeholders))
+
+        if status:
+            where.append(self._storage.gen_in_condition('status', status, placeholders))
         
         query = (
             "SELECT COUNT(album_id) AS cnt",
@@ -123,7 +127,7 @@ class AlbumsModel:
         
     def search_album_meta(self, *, limit: int = 100, offset: int = 0, cname: str = None, path: str = None) -> list:
         placeholders = {}
-        where = []
+        where = ['1=1']
 
         if cname:
             where.append('cname=:cname')
@@ -208,7 +212,7 @@ class AlbumsModel:
 
     def set_albums_meta_stale(self, *, last_checked: str = None) -> int:
         placeholders = {}
-        where = []
+        where = ['1=1']
 
         if last_checked:
             where.append('last_checked<:last_checked')
