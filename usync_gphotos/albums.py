@@ -335,7 +335,8 @@ class Albums:
         if media_item_meta['status'] != 'synced':
             raise ValueError('media item is not synced')
         
-        src_file = os.path.join(self._media_items.dest_path, relative_src_path, item_name)
+        src_file_relative = os.path.join(relative_src_path, item_name)
+        src_file = os.path.join(self._media_items.dest_path, src_file_relative)
         dest_path = os.path.join(self._dest_path, relative_dest_path, album_name)
         dest_file = os.path.join(dest_path, item_name)
 
@@ -343,8 +344,8 @@ class Albums:
             raise ValueError(f'missing source file')
 
         # if file already exists, skip
-        if os.path.isfile(dest_file):
-            self._logger.debug(f'Skipping album item #{media_item_meta["media_id"]}. File already exists')
+        if os.path.islink(dest_file):
+            self._logger.debug(f'Skipping album item #{media_item_meta["media_id"]}. Link already exists')
             return False
         
         self._logger.debug(f'Linking album item #{media_item_meta["media_id"]}')
@@ -352,8 +353,8 @@ class Albums:
         if not os.path.isdir(dest_path):
             os.makedirs(dest_path)
 
-        # create hard link
-        os.link(src_file, dest_file)
+        # create symbolic link
+        os.symlink(os.path.join('..', src_file_relative), dest_file)
 
         return True
     
