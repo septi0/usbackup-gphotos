@@ -1,4 +1,5 @@
 import re
+from datetime import timedelta
 
 __all__ = ['transform_fs_safe']
 
@@ -20,11 +21,15 @@ def transform_fs_safe(file_name: str) -> str:
     return file_name
 
 def gen_batch_stats(t_start: float, t_end: float, processed: int, total: int) -> tuple:
-    # calc percentage completed
-    percentage = round(processed / total * 100, 2)
+    # calc percentage completed, add % sign
+    percentage = round(processed / total * 100, 2) if total > 0 else 0
+    # format percentage
+    percentage_str = f'{percentage}%'
 
     # calc estimated time left
     elapsed = (t_end - t_start).total_seconds()
     eta = round((elapsed / processed) * (total - processed), 2)
+    # format eta
+    eta_str = str(timedelta(seconds=eta))
 
-    return (percentage, eta)
+    return (percentage_str, eta_str)

@@ -136,7 +136,7 @@ class MediaItems:
             
             (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
 
-            self._logger.info(f'Media items batch delete ({percentage}%, eta: {eta}s): deleted {len(to_delete)}')
+            self._logger.info(f'Media items batch delete ({percentage}, eta: {eta}): deleted {len(to_delete)}')
 
     def get_item_meta(self, *, media_id: int = None, remote_id: str = None) -> dict:
         return self._model.get_media_item_meta(media_id=media_id, remote_id=remote_id)
@@ -362,7 +362,7 @@ class MediaItems:
 
             (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
 
-            self._logger.info(f'Media items batch sync ({percentage}%, eta: {eta}s): synced {batch_info["synced"]}, skipped {batch_info["skipped"]}, failed {batch_info["failed"]}')
+            self._logger.info(f'Media items batch sync ({percentage}, eta: {eta}): synced {batch_info["synced"]}, skipped {batch_info["skipped"]}, failed {batch_info["failed"]}')
 
         self._clean_tmp_dir()
 

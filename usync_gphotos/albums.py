@@ -306,7 +306,7 @@ class Albums:
             
             (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
 
-            self._logger.info(f'Album items batch sync ({percentage}%, eta: {eta}s): synced {batch_info["synced"]}, skipped {batch_info["skipped"]}, failed {batch_info["failed"]}')
+            self._logger.info(f'Album items batch sync ({percentage}, eta: {eta}): synced {batch_info["synced"]}, skipped {batch_info["skipped"]}, failed {batch_info["failed"]}')
 
         return info
 
@@ -403,4 +403,4 @@ class Albums:
             
             (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
 
-            self._logger.info(f'Albums items batch delete ({percentage}%, eta: {eta}s): deleted {len(to_delete)}')
+            self._logger.info(f'Albums items batch delete ({percentage}, eta: {eta}): deleted {len(to_delete)}')
