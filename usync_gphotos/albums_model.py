@@ -16,7 +16,7 @@ class AlbumsModel:
             raise ValueError('Missing media_id or remote_id')
 
         placeholders = {}
-        where = ['1=1']
+        where = []
 
         if album_id:
             where.append('album_id=:album_id')
@@ -42,7 +42,7 @@ class AlbumsModel:
 
     def get_albums_meta(self, *, limit: int = 100, offset: int = 0, status = None) -> list:
         placeholders = {}
-        where = ['1=1']
+        where = []
 
         where.append(self._storage.gen_in_condition('status', status, placeholders))
 
@@ -67,7 +67,7 @@ class AlbumsModel:
     
     def get_albums_items_meta(self, *, limit: int = 100, offset: int = 0, status = None, album_id: int = None) -> list:
         placeholders = {}
-        where = ['1=1']
+        where = []
 
         where.append(self._storage.gen_in_condition('status', status, placeholders))
 
@@ -95,14 +95,20 @@ class AlbumsModel:
 
             return [dict(r) for r in rows]
     
-    def get_album_items_meta_cnt(self, album_id: int) -> int:
+    def get_album_items_meta_cnt(self, album_id: int, *, status = None) -> int:
         if not album_id:
             raise ValueError('Missing album_id')
+        
+        placeholders = {}
+        where = []
+        
+        where.append('album_id=:album_id')
+        where.append(self._storage.gen_in_condition('status', status, placeholders))
         
         query = (
             "SELECT COUNT(album_id) AS cnt",
             "FROM albums_items",
-            "WHERE album_id=:album_id",
+            f"WHERE {' AND '.join(where)}",
         )
 
         with self._storage.execute(query, {'album_id': album_id}) as cursor:
@@ -115,7 +121,7 @@ class AlbumsModel:
         
     def search_album_meta(self, *, limit: int = 100, offset: int = 0, cname: str = None, path: str = None) -> list:
         placeholders = {}
-        where = ['1=1']
+        where = []
 
         if cname:
             where.append('cname=:cname')
@@ -200,7 +206,7 @@ class AlbumsModel:
 
     def set_albums_meta_stale(self, *, last_checked: str = None) -> int:
         placeholders = {}
-        where = ['1=1']
+        where = []
 
         if last_checked:
             where.append('last_checked<:last_checked')

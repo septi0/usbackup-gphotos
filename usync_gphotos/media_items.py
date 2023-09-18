@@ -281,6 +281,8 @@ class MediaItems:
             'failed': 0,
         }
 
+        remaining = self._model.get_media_items_meta_cnt(status=['pending_sync', 'sync_error'])
+
         while True:
             to_sync = await self._get_media_items_to_sync(limit=limit, offset=offset)
 
@@ -330,7 +332,9 @@ class MediaItems:
             info['skipped'] += batch_info['skipped']
             info['failed'] += batch_info['failed']
 
-            self._logger.info(f'Media items batch sync: synced {batch_info["synced"]}, skipped {batch_info["skipped"]}, failed {batch_info["failed"]}. Concurrency {concurrency}')
+            remaining -= len(to_sync)
+
+            self._logger.info(f'Media items batch sync: synced {batch_info["synced"]}, skipped {batch_info["skipped"]}, failed {batch_info["failed"]}. Remaining: {remaining}')
 
         self._clean_tmp_dir()
 
