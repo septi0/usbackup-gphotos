@@ -9,7 +9,7 @@ from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 from usync_gphotos.media_items_model import MediaItemsModel
 from usync_gphotos.gphotos_api import GPhotosApi
-from usync_gphotos.utils import transform_fs_safe
+from usync_gphotos.utils import transform_fs_safe, gen_batch_stats
 
 __all__ = ['MediaItems', 'MediaItemDownloadError']
 
@@ -115,6 +115,7 @@ class MediaItems:
 
         total = self._model.get_media_items_meta_cnt(status='stale')
         processed = 0
+        t_start = datetime.now()
 
         while True:
             to_delete = self._model.get_media_items_meta(limit=limit, status='stale')
@@ -129,11 +130,13 @@ class MediaItems:
 
             # commit batch
             self._model.commit()
+            t_end = datetime.now()
 
             processed += len(to_delete)
-            processed_percent = round(processed / total * 100, 2)
+            
+            (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
 
-            self._logger.info(f'Media items batch delete ({processed_percent}%): deleted {len(to_delete)}')
+            self._logger.info(f'Media items batch delete ({percentage}%, eta: {eta}s): deleted {len(to_delete)}')
 
     def get_item_meta(self, *, media_id: int = None, remote_id: str = None) -> dict:
         return self._model.get_media_item_meta(media_id=media_id, remote_id=remote_id)
@@ -304,6 +307,7 @@ class MediaItems:
 
         total = self._model.get_media_items_meta_cnt(status=['pending_sync', 'sync_error'])
         processed = 0
+        t_start = datetime.now()
 
         while True:
             to_sync = await self._get_media_items_to_sync(limit=limit, offset=offset)
@@ -349,15 +353,16 @@ class MediaItems:
 
             # commit batch
             self._model.commit()
+            t_end = datetime.now()
 
             info['synced'] += batch_info['synced']
             info['skipped'] += batch_info['skipped']
             info['failed'] += batch_info['failed']
-
             processed += len(to_sync)
-            processed_percent = round(processed / total * 100, 2)
 
-            self._logger.info(f'Media items batch sync ({processed_percent}%): synced {batch_info["synced"]}, skipped {batch_info["skipped"]}, failed {batch_info["failed"]}')
+            (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
+
+            self._logger.info(f'Media items batch sync ({percentage}%, eta: {eta}s): synced {batch_info["synced"]}, skipped {batch_info["skipped"]}, failed {batch_info["failed"]}')
 
         self._clean_tmp_dir()
 
@@ -425,5 +430,8 @@ class MediaItems:
 
         # set file create / modify time
         os.utime(dest_file, (create_date_ts, modify_date_ts))
+
+        # set permissions
+        os.chmod(dest_file, 0o644)
 
         return True

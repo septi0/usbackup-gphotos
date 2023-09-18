@@ -18,3 +18,13 @@ def transform_fs_safe(file_name: str) -> str:
         file_name = file_name[:255]
 
     return file_name
+
+def gen_batch_stats(t_start: float, t_end: float, processed: int, total: int) -> tuple:
+    # calc percentage completed
+    percentage = round(processed / total * 100, 2)
+
+    # calc estimated time left
+    elapsed = (t_end - t_start).total_seconds()
+    eta = round((elapsed / processed) * (total - processed), 2)
+
+    return (percentage, eta)

@@ -5,7 +5,7 @@ from datetime import datetime
 from usync_gphotos.albums_model import AlbumsModel
 from usync_gphotos.media_items import MediaItems
 from usync_gphotos.gphotos_api import GPhotosApi
-from usync_gphotos.utils import transform_fs_safe
+from usync_gphotos.utils import transform_fs_safe, gen_batch_stats
 
 __all__ = ['Albums']
 
@@ -250,6 +250,7 @@ class Albums:
 
         total = self._model.get_albums_items_meta_cnt(album_id=album_id, status=['pending_sync', 'sync_error'])
         processed = 0
+        t_start = datetime.now()
 
         while True:
             to_sync = self._model.get_albums_items_meta(limit=limit, offset=offset, album_id=album_id, status=['pending_sync', 'sync_error'])
@@ -296,15 +297,16 @@ class Albums:
 
             # commit batch
             self._model.commit()
+            t_end = datetime.now()
 
             info['synced'] += batch_info['synced']
             info['skipped'] += batch_info['skipped']
             info['failed'] += batch_info['failed']
-
             processed += len(to_sync)
-            processed_percent = round(processed / total * 100, 2)
+            
+            (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
 
-            self._logger.info(f'Album items batch sync ({processed_percent}%): synced {batch_info["synced"]}, skipped {batch_info["skipped"]}, failed {batch_info["failed"]}')
+            self._logger.info(f'Album items batch sync ({percentage}%, eta: {eta}s): synced {batch_info["synced"]}, skipped {batch_info["skipped"]}, failed {batch_info["failed"]}')
 
         return info
 
@@ -377,6 +379,7 @@ class Albums:
 
         total = self._model.get_albums_items_meta_cnt(status='stale')
         processed = 0
+        t_start = datetime.now()
 
         while True:
             to_delete = self._model.get_albums_items_meta(limit=limit, status='stale')
@@ -394,8 +397,10 @@ class Albums:
 
             # commit batch
             self._model.commit()
+            t_end = datetime.now()
 
             processed += len(to_delete)
-            processed_percent = round(processed / total * 100, 2)
+            
+            (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
 
-            self._logger.info(f'Albums items batch delete ({processed_percent}%): deleted {len(to_delete)}')
+            self._logger.info(f'Albums items batch delete ({percentage}%, eta: {eta}s): deleted {len(to_delete)}')
