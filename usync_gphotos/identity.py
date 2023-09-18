@@ -139,6 +139,7 @@ class USyncGPhotosIdentity:
 
     def _setup(self, config: dict) -> None:
         data_dir = self._gen_data_dir(config.get('data_dir', ''))
+        library_dir = os.path.join(data_dir, 'library')
         storage_file = os.path.join(data_dir, 'usync_gphotos.db')
         auth_file = config.get('auth_file', '')
         auth_scopes = [
@@ -169,8 +170,8 @@ class USyncGPhotosIdentity:
         self._lock_file = os.path.join(data_dir, 'usync_gphotos.lock')
 
         self._gauth = gauth
-        self._media_items = MediaItems(data_dir, model=mi_model, google_api=google_api, logger=self._logger)
-        self._albums = Albums(data_dir, model=a_model, google_api=google_api, media_items=self._media_items, logger=self._logger)
+        self._media_items = MediaItems(library_dir, model=mi_model, google_api=google_api, logger=self._logger)
+        self._albums = Albums(library_dir, model=a_model, google_api=google_api, media_items=self._media_items, logger=self._logger)
 
     def _gen_data_dir(self, data_dir: str) -> str:
         data_dir = os.path.realpath(data_dir)

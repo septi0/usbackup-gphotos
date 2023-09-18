@@ -84,8 +84,8 @@ class Albums:
 
         return index_cnt
 
-    def sync(self, *, concurrency: int = 1) -> None:
-        asyncio.run(self._sync_albums(concurrency=concurrency))
+    def sync(self, *, concurrency: int = 1, use_symlinks: bool = True) -> None:
+        asyncio.run(self._sync_albums(concurrency=concurrency, use_symlinks=use_symlinks))
 
     def delete_stale(self) -> None:
         self._delete_stale_albums_items()
@@ -208,7 +208,7 @@ class Albums:
             status='pending_sync',
         )
 
-    async def _sync_albums(self, *, concurrency: int = 1) -> None:
+    async def _sync_albums(self, **opts) -> None:
         limit = 100
         offset = 0
 
@@ -221,7 +221,7 @@ class Albums:
 
             for album_meta in to_sync:
                 try:
-                    stats = await self._sync_album(album_meta, concurrency=concurrency)
+                    stats = await self._sync_album(album_meta, **opts)
 
                     if stats['failed']:
                         raise Exception(f'{stats["failed"]} items failed to sync')
@@ -235,10 +235,13 @@ class Albums:
             # commit batch
             self._model.commit()
 
-    async def _sync_album(self, album_meta: dict, *, concurrency: int = 1) -> dict:
+    async def _sync_album(self, album_meta: dict, *, concurrency: int = 1, use_symlinks: bool = True) -> dict:
         album_id = album_meta['album_id']
         limit = 100
         offset = 0
+        opts = {
+            'use_symlinks': use_symlinks,
+        }
 
         info = {
             'synced': 0,
@@ -275,7 +278,7 @@ class Albums:
                 for album_item in chunk:
                     media_item_meta = self._media_items.get_item_meta(media_id=album_item['media_id'])
                     # sync album item
-                    tasks.append(asyncio.create_task(self._sync_album_item(album_meta, media_item_meta), name=album_item['media_id']))
+                    tasks.append(asyncio.create_task(self._sync_album_item(album_meta, media_item_meta, **opts), name=album_item['media_id']))
 
                 await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -310,7 +313,7 @@ class Albums:
 
         return info
 
-    async def _sync_album_item(self, album_meta: dict, media_item_meta: dict) -> bool:
+    async def _sync_album_item(self, album_meta: dict, media_item_meta: dict, *, use_symlinks: bool = True) -> bool:
         relative_src_path = media_item_meta.get('path')
         relative_dest_path = album_meta.get('path')
         album_name = album_meta.get('cname')
@@ -343,8 +346,8 @@ class Albums:
             raise ValueError(f'missing source file')
 
         # if file already exists, skip
-        if os.path.islink(dest_file):
-            self._logger.debug(f'Skipping album item #{media_item_meta["media_id"]}. Link already exists')
+        if os.path.isfile(dest_file):
+            self._logger.debug(f'Skipping album item #{media_item_meta["media_id"]}. Item already exists')
             return False
         
         self._logger.debug(f'Linking album item #{media_item_meta["media_id"]}')
@@ -352,10 +355,14 @@ class Albums:
         if not os.path.isdir(dest_path):
             os.makedirs(dest_path)
 
-        src_file_relative = os.path.relpath(src_file, dest_path)
+        if use_symlinks:
+            src_file_relative = os.path.relpath(src_file, dest_path)
 
-        # create symbolic link
-        os.symlink(src_file_relative, dest_file)
+            # create symbolic link
+            os.symlink(src_file_relative, dest_file)
+        else:
+            # use hard links
+            os.link(src_file, dest_file)
 
         return True
     

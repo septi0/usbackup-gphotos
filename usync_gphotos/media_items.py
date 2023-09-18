@@ -250,18 +250,6 @@ class MediaItems:
         if length != downloaded:
             os.remove(dest_file)
             raise MediaItemDownloadError(f'Downloaded size {downloaded} does not match content-length {length}')
-        
-    def _clean_tmp_dir(self) -> None:
-        tmp_download_dir = os.path.join(self._dest_path, 'tmp')
-
-        if not os.path.isdir(tmp_download_dir):
-            return
-
-        for tmp_file in os.listdir(tmp_download_dir):
-            tmp_file = os.path.join(tmp_download_dir, tmp_file)
-
-            if os.path.isfile(tmp_file):
-                os.remove(tmp_file)
     
     def _index_needed(self, media_item_meta: dict, media_item: dict) -> bool:
         if not media_item_meta:
@@ -364,8 +352,6 @@ class MediaItems:
 
             self._logger.info(f'Media items batch sync ({percentage}, eta: {eta}): synced {batch_info["synced"]}, skipped {batch_info["skipped"]}, failed {batch_info["failed"]}')
 
-        self._clean_tmp_dir()
-
         return info
 
     async def _sync_media_item(self, media_item_meta: dict, media_item: dict) -> bool:
@@ -409,14 +395,9 @@ class MediaItems:
         
         self._logger.debug(f'Downloading media item #{media_item_meta["media_id"]}')
 
-        tmp_download_dir = os.path.join(self._dest_path, 'tmp')
-
-        if not os.path.isdir(tmp_download_dir):
-            os.makedirs(tmp_download_dir)
-
         # create tmp file name
         # we use a tmp file so we can move it to dest file after download is complete to avoid partial/incomplete files
-        tmp_file = tempfile.NamedTemporaryFile(dir=tmp_download_dir, delete=False).name
+        tmp_file = tempfile.NamedTemporaryFile(delete=False).name
 
         # download file
         await asyncio.to_thread(self._download_media_item, download_url, tmp_file)
@@ -425,7 +406,7 @@ class MediaItems:
             os.makedirs(dest_path)
 
         # move tmp file to dest file
-        # Note: don't use or.rename() as it will fail if directory is on different device
+        # Note: don't use or.rename() as it will fail if directory is on a different filesystem
         shutil.move(tmp_file, dest_file)
 
         # set file create / modify time
