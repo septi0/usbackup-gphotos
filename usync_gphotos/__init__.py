@@ -22,7 +22,7 @@ def main():
     sync_parser.add_argument('--no-albums', dest='no_albums', help='Skip albums sync', action='store_true', default=False)
     sync_parser.add_argument('--rescan', dest='rescan', help='Rescan all photos', action='store_true', default=False)
     sync_parser.add_argument('--album', dest='albums', action='append', help='Album name')
-    sync_parser.add_argument('--concurrency', dest='concurrency', help='Concurrency', type=int, default=20)
+    sync_parser.add_argument('--concurrency', dest='concurrency', help='Concurrency', type=int, default=10)
     sync_parser.add_argument('--delete-stale', dest='delete_stale', help='Delete stale items (photos not found in Google Photos anymore)', action='store_true', default=False)
 
     index_parser = subparsers.add_parser('index', help='Index photos')

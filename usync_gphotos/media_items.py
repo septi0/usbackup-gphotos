@@ -26,18 +26,7 @@ class MediaItems:
         self._media_items_list_limit: int = 100
         self._media_items_batch_limit: int = 50
 
-        self._session: requests.Session = requests.Session()
-
-        # https://cloud.google.com/apis/design/errors
-        retries = Retry(
-            total=3,
-            backoff_factor=1,
-            status_forcelist=[409, 429, 499, 500, 502, 503, 504],
-            respect_retry_after_header=True,
-            raise_on_status=False,
-        )
-
-        self._session.mount("https://", HTTPAdapter(max_retries=retries))
+        self._dl_session: requests.Session = None
 
     @property
     def dest_path(self) -> str:
@@ -105,6 +94,19 @@ class MediaItems:
         return index_cnt
 
     def sync(self, *, concurrency: int = 1) -> dict:
+        self._dl_session = requests.Session()
+
+        # https://cloud.google.com/apis/design/errors
+        retries = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[409, 429, 499, 500, 502, 503, 504],
+            respect_retry_after_header=True,
+            raise_on_status=False,
+        )
+
+        self._dl_session.mount("https://", HTTPAdapter(max_retries=retries, pool_maxsize=concurrency))
+    
         return asyncio.run(self._sync_media_items(concurrency=concurrency))
 
     def delete_stale(self) -> None:
@@ -207,7 +209,7 @@ class MediaItems:
     
     def _download_media_item(self, url: str, dest_file: str) -> None:
         try:
-            resp = self._session.get(url, stream=True, timeout=(5, 30))
+            resp = self._dl_session.get(url, stream=True, timeout=(5, 30))
         except Exception as e:
             raise MediaItemDownloadError(f'Failed to download media item. Reason: {e}') from None
         

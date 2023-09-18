@@ -33,8 +33,6 @@ class Storage:
         
         try:
             cursor = self._conn.cursor()
-            # print('')
-            # print(query)
             cursor.execute(query, params or {})
             yield cursor
         finally:
