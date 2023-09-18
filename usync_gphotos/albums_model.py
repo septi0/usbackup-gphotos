@@ -111,7 +111,7 @@ class AlbumsModel:
             f"WHERE {' AND '.join(where)}",
         )
 
-        with self._storage.execute(query, {'album_id': album_id}) as cursor:
+        with self._storage.execute(query, placeholders) as cursor:
             row = cursor.fetchone()
 
             if not row:
