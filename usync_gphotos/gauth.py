@@ -99,7 +99,10 @@ class GAuth:
         
         token = self._gen_oauth2_token('refresh_token', refresh_token=self._token.get('refresh_token'))
 
-        self._update_token(token, replace=True)
+        self._update_token({
+            'access_token': token['access_token'],
+            'expires_at': token['expires_at'],
+        })
 
         if token:
             self._logger.info(f'Access token refreshed')
@@ -119,10 +122,7 @@ class GAuth:
         token = self._gen_oauth2_token('authorization_code', code=code)
 
         if token:
-            self._update_token({
-                'access_token': token['access_token'],
-                'expires_at': token['expires_at'],
-            })
+            self._update_token(token, replace=True)
             self._logger.info(f'Access token issued')
         else:
             self._update_token({}, replace=True)
