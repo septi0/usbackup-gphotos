@@ -40,7 +40,7 @@ class AlbumsModel:
 
             return dict(row)
 
-    def get_albums_meta(self, *, limit: int = 100, offset: int = 0, status: str | list = None) -> list:
+    def get_albums_meta(self, *, limit: int = 100, offset: int = 0, status = None) -> list:
         placeholders = {}
         where = ['1=1']
 
@@ -65,7 +65,7 @@ class AlbumsModel:
 
             return [dict(r) for r in rows]
     
-    def get_albums_items_meta(self, *, limit: int = 100, offset: int = 0, status: str | list = None, album_id: int = None) -> list:
+    def get_albums_items_meta(self, *, limit: int = 100, offset: int = 0, status = None, album_id: int = None) -> list:
         placeholders = {}
         where = ['1=1']
 

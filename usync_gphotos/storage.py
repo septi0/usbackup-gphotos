@@ -16,7 +16,7 @@ class Storage:
         self._conn.row_factory = sqlite3.Row
 
     @contextmanager
-    def execute(self, query: str | tuple, params: dict = None, *, commit: bool = True):
+    def execute(self, query, params: dict = None, *, commit: bool = True):
         if not query:
             raise ValueError('query must be specified')
         
@@ -46,7 +46,7 @@ class Storage:
     def commit(self) -> None:
         self._conn.commit()
 
-    def gen_in_condition(self, field: str, values: str | list, data: dict) -> str:
+    def gen_in_condition(self, field: str, values, data: dict) -> str:
         if not field or not values:
             return ''
         

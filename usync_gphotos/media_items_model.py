@@ -40,7 +40,7 @@ class MediaItemsModel:
 
             return dict(row)
 
-    def get_media_items_meta(self, *, limit: int = 100, offset: int = 0, status: str | list = None) -> list:
+    def get_media_items_meta(self, *, limit: int = 100, offset: int = 0, status = None) -> list:
         placeholders = {}
         where = ['1=1']
 
