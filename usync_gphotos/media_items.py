@@ -158,7 +158,7 @@ class MediaItems:
     
     def ignore_items(self, media_items: list) -> None:
         for media_item in media_items:
-            self._model.update_media_item_meta(media_item['media_id'], status='ignored')
+            self._model.update_media_item_meta(media_item, status='ignored')
 
         self._model.commit()
 
