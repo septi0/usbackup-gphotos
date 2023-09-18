@@ -168,7 +168,12 @@ class MediaItems:
     def _get_canonicalized_name(self, file_name: str, path: str) -> str:
         unique = 1
 
-        file_name = transform_fs_safe(file_name)
+        # split file name and extension
+        (name, ext) = os.path.splitext(file_name)
+
+        name = transform_fs_safe(name)
+
+        file_name = f'{name}{ext}'
 
         while True:
             if not self._model.search_media_item_meta(cname=file_name, path=path):
