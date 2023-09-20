@@ -6,7 +6,7 @@ class MediaItemsModel:
     def __init__(self, storage: Storage) -> None:
         self._storage: Storage = storage
 
-        self._allowed_status = ['pending_sync', 'sync_error', 'synced', 'stale', 'ignored']
+        self._item_statuses: list = ['pending_sync', 'sync_error', 'synced', 'stale', 'ignored']
 
         self._ensure_table()
 
@@ -41,32 +41,6 @@ class MediaItemsModel:
                 return {}
 
             return dict(row)
-
-    def get_media_items_meta(self, *, limit: int = 100, offset: int = 0, status = None) -> list:
-        placeholders = {}
-        where = ['1=1']
-
-        if status:
-            where.append(self._storage.gen_in_condition('status', status, placeholders))
-
-        query = (
-            "SELECT *",
-            "FROM media_items",
-            f"WHERE {' AND '.join(where)}",
-            "ORDER BY media_id ASC",
-            "LIMIT :limit OFFSET :offset",
-        )
-
-        placeholders['limit'] = limit
-        placeholders['offset'] = offset
-
-        with self._storage.execute(query, placeholders) as cursor:
-            rows = cursor.fetchall()
-
-            if not rows:
-                return []
-
-            return [dict(r) for r in rows]
         
     def get_media_items_meta_cnt(self, *, status = None) -> int:
         placeholders = {}
@@ -89,7 +63,7 @@ class MediaItemsModel:
 
             return row['cnt']
         
-    def search_media_item_meta(self, *, limit: int = 100, offset: int = 0, cname: str = None, path: str = None) -> list:
+    def search_media_items_meta(self, *, limit: int = 100, offset: int = 0, cname: str = None, path: str = None, status = None) -> list:
         placeholders = {}
         where = ['1=1']
 
@@ -100,6 +74,9 @@ class MediaItemsModel:
         if path:
             where.append('path=:path')
             placeholders['path'] = path
+
+        if status:
+            where.append(self._storage.gen_in_condition('status', status, placeholders))
 
         query = (
             "SELECT *",
@@ -130,7 +107,7 @@ class MediaItemsModel:
             if key not in allowed_keys:
                 raise ValueError(f'Invalid key "{key}"')
             
-        if 'status' in kwargs and kwargs['status'] not in self._allowed_status:
+        if 'status' in kwargs and kwargs['status'] not in self._item_statuses:
             raise ValueError(f'Invalid status "{kwargs["status"]}"')
             
         placeholders = {}
@@ -207,7 +184,7 @@ class MediaItemsModel:
         ) -> int:
         placeholders = {}
 
-        if status and status not in self._allowed_status:
+        if status and status not in self._item_statuses:
             raise ValueError(f'Invalid status "{status}"')
 
         query = (

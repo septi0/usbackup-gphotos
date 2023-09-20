@@ -22,8 +22,8 @@ class GPhotosApi:
 
         # https://cloud.google.com/apis/design/errors
         retries = Retry(
-            total=3,
-            backoff_factor=1,
+            total=5,
+            backoff_factor=3,
             status_forcelist=[409, 429, 499, 500, 502, 503, 504],
             respect_retry_after_header=True,
             raise_on_status=False,

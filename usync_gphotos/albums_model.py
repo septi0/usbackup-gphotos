@@ -6,7 +6,8 @@ class AlbumsModel:
     def __init__(self, storage: Storage) -> None:
         self._storage: Storage = storage
 
-        self._allowed_status = ['pending_sync', 'sync_error', 'synced', 'stale']
+        self._album_statuses: list = ['pending_sync', 'sync_error', 'synced', 'stale']
+        self._item_statuses: list = ['pending_sync', 'sync_error', 'synced', 'stale', 'ignored']
 
         self._ensure_table()
 
@@ -41,10 +42,64 @@ class AlbumsModel:
                 return {}
 
             return dict(row)
-
-    def get_albums_meta(self, *, limit: int = 100, offset: int = 0, status = None) -> list:
+        
+    def get_albums_meta_cnt(self, *, status = None) -> int:
         placeholders = {}
         where = ['1=1']
+
+        if status:
+            where.append(self._storage.gen_in_condition('status', status, placeholders))
+
+        query = (
+            "SELECT COUNT(album_id) AS cnt",
+            "FROM albums",
+            f"WHERE {' AND '.join(where)}",
+        )
+
+        with self._storage.execute(query, placeholders) as cursor:
+            row = cursor.fetchone()
+
+            if not row:
+                return 0
+
+            return row['cnt']
+
+    def get_albums_items_meta_cnt(self, *, status=None, album_id: int = None) -> int:
+        placeholders = {}
+        where = ['1=1']
+
+        if status:
+            where.append(self._storage.gen_in_condition('status', status, placeholders))
+
+        if album_id:
+            where.append('album_id=:album_id')
+            placeholders['album_id'] = album_id
+        
+        query = (
+            "SELECT COUNT(album_id) AS cnt",
+            "FROM albums_items",
+            f"WHERE {' AND '.join(where)}",
+        )
+
+        with self._storage.execute(query, placeholders) as cursor:
+            row = cursor.fetchone()
+
+            if not row:
+                return 0
+
+            return row['cnt']
+        
+    def search_albums_meta(self, *, limit: int = 100, offset: int = 0, cname: str = None, path: str = None, status = None) -> list:
+        placeholders = {}
+        where = ['1=1']
+
+        if cname:
+            where.append('cname=:cname')
+            placeholders['cname'] = cname
+
+        if path:
+            where.append('path=:path')
+            placeholders['path'] = path
 
         if status:
             where.append(self._storage.gen_in_condition('status', status, placeholders))
@@ -67,8 +122,8 @@ class AlbumsModel:
                 return []
 
             return [dict(r) for r in rows]
-    
-    def get_albums_items_meta(self, *, limit: int = 100, offset: int = 0, status = None, album_id: int = None) -> list:
+        
+    def search_albums_items_meta(self, *, limit: int = 100, offset: int = 0, status = None, album_id: int = None) -> list:
         placeholders = {}
         where = ['1=1']
 
@@ -98,62 +153,6 @@ class AlbumsModel:
                 return []
 
             return [dict(r) for r in rows]
-    
-    def get_albums_items_meta_cnt(self, *, status=None, album_id: int = None) -> int:
-        placeholders = {}
-        where = ['1=1']
-
-        if status:
-            where.append(self._storage.gen_in_condition('status', status, placeholders))
-
-        if album_id:
-            where.append('album_id=:album_id')
-            placeholders['album_id'] = album_id
-        
-        query = (
-            "SELECT COUNT(album_id) AS cnt",
-            "FROM albums_items",
-            f"WHERE {' AND '.join(where)}",
-        )
-
-        with self._storage.execute(query, placeholders) as cursor:
-            row = cursor.fetchone()
-
-            if not row:
-                return 0
-
-            return row['cnt']
-        
-    def search_album_meta(self, *, limit: int = 100, offset: int = 0, cname: str = None, path: str = None) -> list:
-        placeholders = {}
-        where = ['1=1']
-
-        if cname:
-            where.append('cname=:cname')
-            placeholders['cname'] = cname
-
-        if path:
-            where.append('path=:path')
-            placeholders['path'] = path
-
-        query = (
-            "SELECT *",
-            "FROM albums",
-            f"WHERE {' AND '.join(where)}",
-            "ORDER BY album_id ASC",
-            "LIMIT :limit OFFSET :offset",
-        )
-
-        placeholders['limit'] = limit
-        placeholders['offset'] = offset
-
-        with self._storage.execute(query, placeholders) as cursor:
-            rows = cursor.fetchall()
-
-            if not rows:
-                return []
-
-            return [dict(r) for r in rows]
 
     def update_album_meta(self, album_id: int, **kwargs) -> int:
         if not album_id:
@@ -165,7 +164,7 @@ class AlbumsModel:
             if key not in allowed_keys:
                 raise ValueError(f'Invalid key "{key}"')
             
-        if 'status' in kwargs and kwargs['status'] not in self._allowed_status:
+        if 'status' in kwargs and kwargs['status'] not in self._album_statuses:
             raise ValueError(f'Invalid status "{kwargs["status"]}"')
             
         placeholders = {}
@@ -195,7 +194,7 @@ class AlbumsModel:
             if key not in allowed_keys:
                 raise ValueError(f'Invalid key "{key}"')
             
-        if 'status' in kwargs and kwargs['status'] not in self._allowed_status:
+        if 'status' in kwargs and kwargs['status'] not in self._item_statuses:
             raise ValueError(f'Invalid status "{kwargs["status"]}"')
 
         placeholders = {}
@@ -232,21 +231,6 @@ class AlbumsModel:
         with self._storage.execute(query, placeholders) as cursor:
             return cursor.rowcount
 
-    def set_albums_items_meta_stale(self) -> int:
-        query = (
-            "UPDATE albums_items",
-            "SET status='stale'",
-            "FROM (",
-            "   SELECT * FROM albums_items ai",
-            "   LEFT JOIN albums a ON ai.album_id=a.album_id",
-            "   WHERE a.album_id IS NULL OR a.status='stale'",
-            ") AS t",
-            "WHERE albums_items.album_id=t.album_id AND albums_items.media_id=t.media_id",
-        )
-
-        with self._storage.execute(query) as cursor:
-            return cursor.rowcount
-
     def set_album_items_meta_stale(self, album_id: str) -> int:
         if not album_id:
             raise ValueError('Missing album_id')
@@ -262,6 +246,21 @@ class AlbumsModel:
         placeholders['album_id'] = album_id
 
         with self._storage.execute(query, placeholders) as cursor:
+            return cursor.rowcount
+
+    def set_albums_items_meta_stale(self) -> int:
+        query = (
+            "UPDATE albums_items",
+            "SET status='stale'",
+            "FROM (",
+            "   SELECT * FROM albums_items ai",
+            "   LEFT JOIN albums a ON ai.album_id=a.album_id",
+            "   WHERE a.album_id IS NULL OR a.status='stale'",
+            ") AS t",
+            "WHERE albums_items.album_id=t.album_id AND albums_items.media_id=t.media_id",
+        )
+
+        with self._storage.execute(query) as cursor:
             return cursor.rowcount
 
     def delete_album_meta(self, album_id: int) -> int:
@@ -313,7 +312,7 @@ class AlbumsModel:
         ) -> int:
         placeholders = {}
 
-        if status and status not in self._allowed_status:
+        if status and status not in self._album_statuses:
             raise ValueError(f'Invalid status "{status}"')
 
         query = (

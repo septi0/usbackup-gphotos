@@ -33,13 +33,13 @@ class MediaItems:
     def dest_path(self) -> str:
         return self._dest_path
 
+    # returns number of indexed items
     def index(self, *, last_index: str = None, rescan: bool = False) -> int:
         from_date = None
         page_token = None
         limit = self._media_items_list_limit
         filters = {}
-        index_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        index_cnt = 0
+        processed = 0
 
         if not rescan and last_index:
             from_date = datetime.strptime(last_index, '%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%d')
@@ -56,6 +56,8 @@ class MediaItems:
                 ],
             }
 
+            self._logger.info(f'Searching media items from {from_date}')
+
         while True:
             if from_date:
                 to_index = self._google_api.media_items_search(page_token=page_token, page_size=limit, filters=filters)
@@ -68,39 +70,39 @@ class MediaItems:
 
             media_items = to_index.get('mediaItems', [])
             page_token = to_index.get('nextPageToken')
-            batch_index_cnt = 0
+            batch_processed = 0
 
             for media_item in media_items:
                 indexed = self.ensure_item_indexed(media_item, commit=False)
 
                 if indexed:
-                    batch_index_cnt += 1
+                    batch_processed += 1
 
             # commit batch
             self._model.commit()
 
-            index_cnt += batch_index_cnt
+            processed += batch_processed
 
-            if batch_index_cnt:
-                self._logger.info(f'Media items batch index: indexed {batch_index_cnt}')
+            if batch_processed:
+                self._logger.info(f'Media items batch index: indexed {batch_processed}')
 
             if not page_token:
                 break
 
-        # if from_date is not set, it means we are (re)indexing all items
-        # set all items older than this run date as stale
-        if not from_date:
-            self._model.set_media_items_stale(last_checked=index_date)
+        # set all items older than last_index date as stale
+        if rescan and last_index:
+            self._model.set_media_items_stale(last_checked=last_index)
 
-        return index_cnt
+        return processed
 
+    # returns a dict with sync info (synced, skipped, failed)
     def sync(self, *, concurrency: int = 1) -> dict:
         self._dl_session = requests.Session()
 
         # https://cloud.google.com/apis/design/errors
         retries = Retry(
-            total=3,
-            backoff_factor=1,
+            total=5,
+            backoff_factor=3,
             status_forcelist=[409, 429, 499, 500, 502, 503, 504],
             respect_retry_after_header=True,
             raise_on_status=False,
@@ -110,15 +112,20 @@ class MediaItems:
     
         return asyncio.run(self._sync_media_items(concurrency=concurrency))
 
-    def delete_stale(self) -> None:
+    # returns number of deleted items
+    def delete_stale(self) -> int:
         limit = 100
 
         total = self._model.get_media_items_meta_cnt(status='stale')
+
+        if not total:
+            return 0
+
         processed = 0
         t_start = datetime.now()
 
         while True:
-            to_delete = self._model.get_media_items_meta(limit=limit, status='stale')
+            to_delete = self._model.search_media_items_meta(limit=limit, status='stale')
 
             # if no items to delete, break
             if not to_delete:
@@ -136,7 +143,9 @@ class MediaItems:
             
             (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
 
-            self._logger.info(f'Media items batch delete ({percentage}, eta: {eta}): deleted {len(to_delete)}')
+            self._logger.info(f'Media items batch delete: {percentage}, eta: {eta}')
+
+        return processed
 
     def get_item_meta(self, *, media_id: int = None, remote_id: str = None) -> dict:
         return self._model.get_media_item_meta(media_id=media_id, remote_id=remote_id)
@@ -153,7 +162,7 @@ class MediaItems:
             last_checked = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             self._model.update_media_item_meta(media_item_meta['media_id'], last_checked=last_checked)
 
-            self._logger.debug(f'Skipping indexing media item #{media_item_meta["media_id"]}. Index not needed')
+            self._logger.debug(f'Index for media item "{media_item_meta["name"]}" skipped. Index not needed')
 
         if commit:
             self._model.commit()
@@ -180,7 +189,7 @@ class MediaItems:
         file_name = f'{name}{ext}'
 
         while True:
-            if not self._model.search_media_item_meta(cname=file_name, path=path):
+            if not self._model.search_media_items_meta(cname=file_name, path=path):
                 return file_name
             
             name, ext = os.path.splitext(file_name)
@@ -190,7 +199,7 @@ class MediaItems:
             unique += 1
 
     async def _get_media_items_to_sync(self, *, limit: int = 100, offset: int = 0) -> list:
-        media_items_meta = self._model.get_media_items_meta(limit=limit, offset=offset, status=['pending_sync', 'sync_error'])
+        media_items_meta = self._model.search_media_items_meta(limit=limit, offset=offset, status=['pending_sync', 'sync_error'])
 
         if not media_items_meta:
             return []
@@ -219,9 +228,12 @@ class MediaItems:
     def _delete_media_item_file(self, media_item_meta: dict) -> None:
         dest_file = os.path.join(self._dest_path, media_item_meta['path'], media_item_meta['cname'])
 
+        self._logger.debug(f'Deleting media item "{media_item_meta["name"]}"')
+
         if os.path.isfile(dest_file):
-            self._logger.debug(f'Deleting media item #{media_item_meta["media_id"]}')
             os.remove(dest_file)
+        else:
+            self._logger.debug(f'Deletion for media item "{media_item_meta["name"]}" skipped. File not found')
 
     def _gen_path_by_cdate(self, date: str) -> str:
         date = datetime.strptime(date, '%Y-%m-%dT%H:%M:%SZ')
@@ -294,6 +306,10 @@ class MediaItems:
         }
 
         total = self._model.get_media_items_meta_cnt(status=['pending_sync', 'sync_error'])
+
+        if not total:
+            return info
+
         processed = 0
         t_start = datetime.now()
 
@@ -304,63 +320,72 @@ class MediaItems:
             if not to_sync:
                 break
 
-            batch_info = {
-                'synced': 0,
-                'skipped': 0,
-                'failed': 0,
-            }
-
             # break to_sync into chunks of concurrency length
             chunks_to_sync = [to_sync[i:i + concurrency] for i in range(0, len(to_sync), concurrency)]
 
-            # sync items in concurrently
+            # sync items concurrently
             for chunk in chunks_to_sync:
-                tasks = []
+                chunk_info = await self._sync_media_items_concurrently(chunk)
 
-                for (media_item_meta, media_item) in chunk:
-                    # sync media item
-                    tasks.append(asyncio.create_task(self._sync_media_item(media_item_meta, media_item), name=media_item_meta['media_id']))
-
-                await asyncio.gather(*tasks, return_exceptions=True)
-
-                # update items status based on task results
-                for t in tasks:
-                    if t.exception():
-                        self._logger.error(f'Sync for media item #{t.get_name()} failed. Reason: {t.exception()}')
-                        self._model.update_media_item_meta(t.get_name(), status='sync_error')
-
-                        batch_info['failed'] += 1
-                        offset += 1
-                    else:
-                        self._model.update_media_item_meta(t.get_name(), status='synced')
-
-                        if t.result():
-                            batch_info['synced'] += 1
-                        else:
-                            batch_info['skipped'] += 1
+                offset += chunk_info['failed']
+                info['synced'] += chunk_info['synced']
+                info['skipped'] += chunk_info['skipped']
+                info['failed'] += chunk_info['failed']
 
             # commit batch
             self._model.commit()
-            t_end = datetime.now()
 
-            info['synced'] += batch_info['synced']
-            info['skipped'] += batch_info['skipped']
-            info['failed'] += batch_info['failed']
+            t_end = datetime.now()
             processed += len(to_sync)
 
             (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
 
-            self._logger.info(f'Media items batch sync ({percentage}, eta: {eta}): synced {batch_info["synced"]}, skipped {batch_info["skipped"]}, failed {batch_info["failed"]}')
+            self._logger.info(f'Media items batch sync: {percentage}, eta: {eta}')
 
         return info
+    
+    async def _sync_media_items_concurrently(self, to_sync: list) -> dict:
+        tasks = []
+        chunk_info = {
+            'synced': 0,
+            'skipped': 0,
+            'failed': 0,
+        }
 
-    async def _sync_media_item(self, media_item_meta: dict, media_item: dict) -> bool:
+        for (media_item_meta, media_item) in to_sync:
+            # sync media item
+            tasks.append(asyncio.create_task(self._sync_media_item(media_item_meta, media_item), name=media_item_meta['media_id']))
+
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+        # update items status based on task results
+        for t in tasks:
+            if t.exception():
+                self._logger.error(f'Sync for media item #{t.get_name()} failed. {t.exception()}')
+                self._model.update_media_item_meta(t.get_name(), status='sync_error')
+
+                chunk_info['failed'] += 1
+            else:
+                status = t.result()
+
+                # update item status
+                self._model.update_media_item_meta(t.get_name(), status=status)
+
+                if status == 'synced':
+                    chunk_info['synced'] += 1
+                else:
+                    chunk_info['skipped'] += 1
+
+        return chunk_info
+
+    async def _sync_media_item(self, media_item_meta: dict, media_item: dict) -> str:
         if media_item.get('error'):
             raise ValueError(media_item["error"])
         
         relative_dest_path = media_item_meta.get('path')
         name = media_item_meta.get('cname')
         download_url = media_item.get('baseUrl')
+        media_type = media_item_meta.get('mime_type').split('/')[0]
 
         if not relative_dest_path:
             raise ValueError('Missing destination path')
@@ -370,6 +395,15 @@ class MediaItems:
 
         if not download_url:
             raise ValueError(f'Missing download_url')
+        
+        # if media item has status ignored, stop here
+        if media_item_meta['status'] == 'ignored':
+            self._logger.debug(f'Sync for media item "{media_item_meta["name"]}" skipped. Item ignored')
+            return 'ignored'
+        
+        # for videos, download only if status is READY
+        if media_type == 'video' and media_item['mediaMetadata']['video'].get('status') != 'READY':
+            raise ValueError(f'Video status is not READY')
 
         dest_path = os.path.join(self._dest_path, relative_dest_path)
         dest_file = os.path.join(dest_path, name)
@@ -384,16 +418,16 @@ class MediaItems:
             if file_stat.st_mtime != modify_date_ts:
                 os.remove(dest_file)
             else:
-                self._logger.debug(f'Skipping media item #{media_item_meta["media_id"]}. File already exists')
-                return False
+                self._logger.debug(f'Sync for media item "{media_item_meta["name"]}" skipped. File already exists')
+                return 'synced'
         
         # add download type so we can download original file
-        if media_item_meta.get('mime_type').startswith('video/'):
+        if media_type == 'video':
             download_url += '=dv'
         else:
             download_url += '=d'
         
-        self._logger.debug(f'Downloading media item #{media_item_meta["media_id"]}')
+        self._logger.debug(f'Downloading media item "{media_item_meta["name"]}"')
 
         # create tmp file name
         # we use a tmp file so we can move it to dest file after download is complete to avoid partial/incomplete files
@@ -415,4 +449,4 @@ class MediaItems:
         # set permissions
         os.chmod(dest_file, 0o644)
 
-        return True
+        return 'synced'
