@@ -6,7 +6,7 @@ class AlbumsModel:
     def __init__(self, storage: Storage) -> None:
         self._storage: Storage = storage
 
-        self._album_statuses: list = ['pending_sync', 'sync_error', 'synced', 'stale']
+        self._album_statuses: list = ['pending_sync', 'sync_error', 'synced', 'stale', 'index_error']
         self._item_statuses: list = ['pending_sync', 'sync_error', 'synced', 'stale', 'ignored']
 
         self._ensure_table()

@@ -61,15 +61,14 @@ class USyncGPhotosIdentity:
 
             mi_sdate = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-            indexed = self._media_items.index(
+            processed = self._media_items.index(
                 last_index=self._settings.get('media_items_last_index', None),
                 rescan=options.get('rescan', False)
             )
 
-            self._update_aseting('media_items_last_index', mi_sdate)
-
-            if indexed:
-                self._logger.info(f'Indexed {indexed} media items')
+            if bool(processed):
+                self._update_aseting('media_items_last_index', mi_sdate)
+                self._logger.info(f'Indexed {processed.total} media items ({processed})')
             else:
                 self._logger.info(f'No media items indexed')
 
@@ -78,15 +77,15 @@ class USyncGPhotosIdentity:
 
             a_sdate = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-            indexed = self._albums.index(
+            processed = self._albums.index(
+                last_index=self._settings.get('albums_last_index', None),
                 rescan=options.get('rescan', False),
                 filter_albums=options.get('albums', []),
             )
 
-            self._update_aseting('albums_last_index', a_sdate)
-
-            if indexed:
-                self._logger.info(f'Indexed {indexed} albums')
+            if bool(processed):
+                self._update_aseting('albums_last_index', a_sdate)
+                self._logger.info(f'Indexed {processed.total} albums ({processed})')
             else:
                 self._logger.info(f'No albums indexed')
 
@@ -103,15 +102,26 @@ class USyncGPhotosIdentity:
 
         # sync media items
         self._logger.info(f'Syncing media items')
-        self._media_items.sync(
+        processed = self._media_items.sync(
             concurrency=options.get('concurrency', 20),
         )
 
+        if bool(processed):
+            self._logger.info(f'Synced {processed.total} media items ({processed})')
+        else:
+            self._logger.info(f'No media items synced')
+
         # sync albums
         self._logger.info(f'Syncing albums')
-        self._albums.sync(
+
+        processed = self._albums.sync(
             concurrency=options.get('concurrency', 20),
         )
+
+        if bool(processed):
+            self._logger.info(f'Synced {processed.total} albums ({processed})')
+        else:
+            self._logger.info(f'No albums synced')
 
     def auth(self) -> None:
         self._logger.info(f'Authenticating')
@@ -129,12 +139,10 @@ class USyncGPhotosIdentity:
 
         # ignore media items
         if options.get('ignore_media_ids'):
-            self._logger.info(f'Ignoring media items')
             self._media_items.ignore_items(options.get('ignore_media_ids'))
 
         # reset ignored media items
         if options.get('reset_ignored'):
-            self._logger.info(f'Resetting ignored media items')
             self._media_items.reset_ignored_items()
 
     def _setup(self, config: dict) -> None:

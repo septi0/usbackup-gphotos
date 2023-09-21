@@ -9,6 +9,7 @@ from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 from usync_gphotos.media_items_model import MediaItemsModel
 from usync_gphotos.gphotos_api import GPhotosApi
+from usync_gphotos.action_stats import ActionStats
 from usync_gphotos.utils import transform_fs_safe, gen_batch_stats
 
 __all__ = ['MediaItems', 'MediaItemDownloadError']
@@ -33,13 +34,14 @@ class MediaItems:
     def dest_path(self) -> str:
         return self._dest_path
 
-    # returns number of indexed items
-    def index(self, *, last_index: str = None, rescan: bool = False) -> int:
+    # index media items
+    # returns a ActionStats object
+    def index(self, *, last_index: str = None, rescan: bool = False) -> ActionStats:
         from_date = None
         page_token = None
         limit = self._media_items_list_limit
         filters = {}
-        processed = 0
+        info = ActionStats(indexed=0, failed=0)
 
         if not rescan and last_index:
             from_date = datetime.strptime(last_index, '%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%d')
@@ -56,7 +58,7 @@ class MediaItems:
                 ],
             }
 
-            self._logger.info(f'Searching media items from {from_date}')
+            self._logger.info(f'Searching media items starting from {from_date}')
 
         while True:
             if from_date:
@@ -73,15 +75,18 @@ class MediaItems:
             batch_processed = 0
 
             for media_item in media_items:
-                indexed = self.ensure_item_indexed(media_item, commit=False)
-
-                if indexed:
-                    batch_processed += 1
+                try:
+                    indexed = self.ensure_item_indexed(media_item, commit=False)
+                except Exception as e:
+                    self._logger.error(f'Index for media item "{media_item["filename"]}" failed. {e}')
+                    info.increment(failed=1)
+                else:
+                    if indexed:
+                        batch_processed += 1
+                        info.increment(indexed=1)
 
             # commit batch
             self._model.commit()
-
-            processed += batch_processed
 
             if batch_processed:
                 self._logger.info(f'Media items batch index: indexed {batch_processed}')
@@ -91,12 +96,16 @@ class MediaItems:
 
         # set all items older than last_index date as stale
         if rescan and last_index:
-            self._model.set_media_items_stale(last_checked=last_index)
+            stale_cnt = self._model.set_media_items_stale(last_checked=last_index)
 
-        return processed
+            if stale_cnt:
+                self._logger.info(f'Marked {stale_cnt} media items as stale')
 
-    # returns a dict with sync info (synced, skipped, failed)
-    def sync(self, *, concurrency: int = 1) -> dict:
+        return info
+
+    # sync indexed media items
+    # returns a ActionStats object
+    def sync(self, *, concurrency: int = 1) -> ActionStats:
         self._dl_session = requests.Session()
 
         # https://cloud.google.com/apis/design/errors
@@ -112,14 +121,15 @@ class MediaItems:
     
         return asyncio.run(self._sync_media_items(concurrency=concurrency))
 
-    # returns number of deleted items
-    def delete_stale(self) -> int:
+    # delete stale media items
+    # returns a ActionStats object
+    def delete_stale(self) -> ActionStats:
         limit = 100
-
         total = self._model.get_media_items_meta_cnt(status='stale')
+        info = ActionStats(deleted=0, failed=0)
 
         if not total:
-            return 0
+            return info
 
         processed = 0
         t_start = datetime.now()
@@ -132,8 +142,14 @@ class MediaItems:
                 break
 
             for media_item_meta in to_delete:
-                self._delete_media_item_file(media_item_meta)
-                self._model.delete_media_item_meta(media_item_meta['media_id'])
+                try:
+                    self._delete_media_item_file(media_item_meta)
+                    self._model.delete_media_item_meta(media_item_meta['media_id'])
+                except Exception as e:
+                    self._logger.error(f'Deletion for media item "{media_item_meta["name"]}" failed. {e}')
+                    info.increment(failed=1)
+                else:
+                    info.increment(deleted=1)
 
             # commit batch
             self._model.commit()
@@ -145,7 +161,7 @@ class MediaItems:
 
             self._logger.info(f'Media items batch delete: {percentage}, eta: {eta}')
 
-        return processed
+        return info
 
     def get_item_meta(self, *, media_id: int = None, remote_id: str = None) -> dict:
         return self._model.get_media_item_meta(media_id=media_id, remote_id=remote_id)
@@ -295,17 +311,11 @@ class MediaItems:
             status='pending_sync',
         )
 
-    async def _sync_media_items(self, *, concurrency: int = 1) -> dict:
+    async def _sync_media_items(self, *, concurrency: int = 1) -> ActionStats:
         limit = self._media_items_batch_limit
         offset = 0
-
-        info = {
-            'synced': 0,
-            'skipped': 0,
-            'failed': 0,
-        }
-
         total = self._model.get_media_items_meta_cnt(status=['pending_sync', 'sync_error'])
+        info = ActionStats(synced=0, skipped=0, failed=0)
 
         if not total:
             return info
@@ -325,12 +335,10 @@ class MediaItems:
 
             # sync items concurrently
             for chunk in chunks_to_sync:
-                chunk_info = await self._sync_media_items_concurrently(chunk)
+                c_info = await self._sync_media_items_concurrently(chunk)
 
-                offset += chunk_info['failed']
-                info['synced'] += chunk_info['synced']
-                info['skipped'] += chunk_info['skipped']
-                info['failed'] += chunk_info['failed']
+                offset += c_info['failed']
+                info.increment(**dict(c_info))
 
             # commit batch
             self._model.commit()
@@ -344,13 +352,9 @@ class MediaItems:
 
         return info
     
-    async def _sync_media_items_concurrently(self, to_sync: list) -> dict:
+    async def _sync_media_items_concurrently(self, to_sync: list) -> ActionStats:
         tasks = []
-        chunk_info = {
-            'synced': 0,
-            'skipped': 0,
-            'failed': 0,
-        }
+        info = ActionStats(synced=0, skipped=0, failed=0)
 
         for (media_item_meta, media_item) in to_sync:
             # sync media item
@@ -364,7 +368,7 @@ class MediaItems:
                 self._logger.error(f'Sync for media item #{t.get_name()} failed. {t.exception()}')
                 self._model.update_media_item_meta(t.get_name(), status='sync_error')
 
-                chunk_info['failed'] += 1
+                info.increment(failed=1)
             else:
                 status = t.result()
 
@@ -372,11 +376,11 @@ class MediaItems:
                 self._model.update_media_item_meta(t.get_name(), status=status)
 
                 if status == 'synced':
-                    chunk_info['synced'] += 1
+                    info.increment(synced=1)
                 else:
-                    chunk_info['skipped'] += 1
+                    info.increment(skipped=1)
 
-        return chunk_info
+        return info
 
     async def _sync_media_item(self, media_item_meta: dict, media_item: dict) -> str:
         if media_item.get('error'):
