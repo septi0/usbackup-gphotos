@@ -132,10 +132,20 @@ class USyncGPhotosIdentity:
         # delete stale media
         if options.get('delete_stale'):
             self._logger.info(f'Deleting stale albums')
-            self._albums.delete_stale()
+            processed = self._albums.delete_stale()
+
+            if bool(processed):
+                self._logger.info(f'Deleted {processed.total} albums ({processed})')
+            else:
+                self._logger.info(f'No albums deleted')
 
             self._logger.info(f'Deleting stale media items')
-            self._media_items.delete_stale()
+            processed = self._media_items.delete_stale()
+
+            if bool(processed):
+                self._logger.info(f'Deleted {processed.total} media items ({processed})')
+            else:
+                self._logger.info(f'No media items deleted')
 
         # ignore media items
         if options.get('ignore_media_ids'):
