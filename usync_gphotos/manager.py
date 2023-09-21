@@ -76,7 +76,7 @@ class USyncGPhotosManager:
             print(f'  Media items last index: {stats["media_items_last_index"]}')
             print(f'  Albums last index: {stats["albums_last_index"]}')
             print(f'  Media items: {", ".join([f"{value} {key}" for key, value in stats["media_items"].items()])}')
-            print(f'  Albums: {", ".join([f"{value}, {key}" for key, value in stats["albums"].items()])}')
+            print(f'  Albums: {", ".join([f"{value} {key}" for key, value in stats["albums"].items()])}')
             print()
 
     def _parse_config(self, config_files: list[str]) -> dict:
