@@ -47,27 +47,24 @@ class MediaItems:
             from_date = datetime.strptime(last_index, '%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%d')
 
         if from_date:
-            # to_date = '9999-12-31'
+            to_date = '9999-12-31'
 
-            # filters['dateFilter'] = {
-            #     'ranges': [
-            #         {
-            #             'startDate': GPhotosApi.format_date(from_date),
-            #             'endDate': GPhotosApi.format_date(to_date),
-            #         }
-            #     ],
-            # }
+            filters['dateFilter'] = {
+                'ranges': [
+                    {
+                        'startDate': GPhotosApi.format_date(from_date),
+                        'endDate': GPhotosApi.format_date(to_date),
+                    }
+                ],
+            }
 
             self._logger.info(f'Searching media items starting from {from_date}')
 
         while True:
-            # if from_date:
-                # to_index = self._google_api.media_items_search(page_token=page_token, page_size=limit, filters=filters)
-            # else:
-                # to_index = self._google_api.media_items_list(page_token=page_token, page_size=limit)
-
-            # we use media_items_list instead of media_items_search because search returns synced items with a delay
-            to_index = self._google_api.media_items_list(page_token=page_token, page_size=limit)
+            if from_date:
+                to_index = self._google_api.media_items_search(page_token=page_token, page_size=limit, filters=filters)
+            else:
+                to_index = self._google_api.media_items_list(page_token=page_token, page_size=limit)
 
             # if no items to index, break
             if not to_index:
@@ -76,14 +73,8 @@ class MediaItems:
             media_items = to_index.get('mediaItems', [])
             page_token = to_index.get('nextPageToken')
             batch_processed = 0
-            catchup = False
 
             for media_item in media_items:
-                if from_date:
-                    if media_item['mediaMetadata']['creationTime'] < from_date:
-                        catchup = True
-                        break
-
                 try:
                     indexed = self.ensure_item_indexed(media_item, commit=False)
                 except Exception as e:
@@ -100,7 +91,7 @@ class MediaItems:
             if batch_processed:
                 self._logger.info(f'Media items batch index: indexed {batch_processed}')
 
-            if not page_token or catchup:
+            if not page_token:
                 break
 
         # set all items older than last_index date as stale
