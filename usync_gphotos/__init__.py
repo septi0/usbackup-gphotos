@@ -37,6 +37,8 @@ def main():
     maintenance_parser.add_argument('--ignore-media-id', dest='ignore_media_ids', action='append', help='Ignore media id')
     maintenance_parser.add_argument('--reset-ignored', dest='reset_ignored', help='Reset ignored media ids', action='store_true', default=False)
 
+    stats_parser = subparsers.add_parser('stats', help='Stats')
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -79,5 +81,7 @@ def main():
             'ignore_media_ids': args.ignore_media_ids,
             'reset_ignored': args.reset_ignored,
         })
+    elif args.command == 'stats':
+        usync_gphotos.stats()
 
     sys.exit(0)

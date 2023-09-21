@@ -145,6 +145,14 @@ class USyncGPhotosIdentity:
         if options.get('reset_ignored'):
             self._media_items.reset_ignored_items()
 
+    def stats(self) -> dict:
+        return {
+            'media_items_last_index': self._settings.get('media_items_last_index', None),
+            'albums_last_index': self._settings.get('albums_last_index', None),
+            'media_items': self._media_items.stats(),
+            'albums': self._albums.stats(),
+        }
+
     def _setup(self, config: dict) -> None:
         data_dir = self._gen_data_dir(config.get('data_dir', ''))
         library_dir = os.path.join(data_dir, 'library')

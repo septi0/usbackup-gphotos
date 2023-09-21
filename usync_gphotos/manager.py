@@ -68,6 +68,17 @@ class USyncGPhotosManager:
                 self._logger.info(f'Maintenance for identity "{identity.name}" interrupted by user')
                 break
 
+    def stats(self) -> None:
+        for identity in self._identities:
+            stats = identity.stats()
+
+            print(f'Identity: {identity.name}')
+            print(f'  Media items last index: {stats["media_items_last_index"]}')
+            print(f'  Albums last index: {stats["albums_last_index"]}')
+            print(f'  Media items: {", ".join([f"{key} {value}" for key, value in stats["media_items"].items()])}')
+            print(f'  Albums: {", ".join([f"{key} {value}" for key, value in stats["albums"].items()])}')
+            print()
+
     def _parse_config(self, config_files: list[str]) -> dict:
         if not config_files:
             config_files = [

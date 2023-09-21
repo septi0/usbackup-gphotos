@@ -62,6 +62,21 @@ class MediaItemsModel:
                 return 0
 
             return row['cnt']
+
+    def get_media_items_meta_stats(self) -> dict:
+        query = (
+            "SELECT status, COUNT(status) AS cnt",
+            "FROM media_items",
+            "GROUP BY status",
+        )
+
+        with self._storage.execute(query) as cursor:
+            rows = cursor.fetchall()
+
+            if not rows:
+                return {}
+
+            return {r['status']: r['cnt'] for r in rows}
         
     def search_media_items_meta(self, *, limit: int = 100, offset: int = 0, cname: str = None, path: str = None, status = None) -> list:
         placeholders = {}

@@ -193,6 +193,9 @@ class MediaItems:
 
     def reset_ignored_items(self) -> int:
         return self._model.reset_ignored_media_items()
+    
+    def stats(self) -> dict:
+        return self._model.get_media_items_meta_stats()
 
     def _get_canonicalized_name(self, file_name: str, path: str) -> str:
         unique = 1

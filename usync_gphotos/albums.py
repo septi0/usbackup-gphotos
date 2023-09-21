@@ -37,6 +37,7 @@ class Albums:
         # TODO: list albums by date if it will be available in API
 
         while True:
+            # make sure albums with status 'index_error' are reindexed
             to_index = self._google_api.albums_list(page_token=page_token, page_size=limit)
 
             # if no albums to index, break
@@ -115,6 +116,9 @@ class Albums:
             self._logger.debug(f'Index for album "{album_meta["name"]}" skipped. Up to date')
 
         return indexed
+    
+    def stats(self) -> dict:
+        return self._model.get_albums_meta_stats()
     
     def _get_canonicalized_name(self, album_name: str, path: str) -> str:
         unique = 1
