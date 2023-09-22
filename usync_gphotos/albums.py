@@ -32,6 +32,7 @@ class Albums:
     def index(self, *, last_index: str = None, rescan: bool = False, filter_albums: list = []) -> ActionStats:
         page_token = None
         limit = self._album_list_limit
+        check_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         info = ActionStats(indexed=0, failed=0)
 
         # TODO: list albums by date if it will be available in API
@@ -69,12 +70,11 @@ class Albums:
             if not page_token:
                 break
 
-        if last_index:
-            stale_cnt = self._model.set_albums_meta_stale(last_checked=last_index)
-            self._model.set_albums_items_meta_stale()
+        stale_cnt = self._model.set_albums_meta_stale(last_checked=check_date)
+        self._model.set_albums_items_meta_stale()
 
-            if stale_cnt:
-                self._logger.info(f'Marked {stale_cnt} albums as stale')
+        if stale_cnt:
+            self._logger.info(f'Marked {stale_cnt} albums as stale')
 
         return info
 

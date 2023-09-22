@@ -41,6 +41,7 @@ class MediaItems:
         page_token = None
         limit = self._media_items_list_limit
         filters = {}
+        check_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         info = ActionStats(indexed=0, failed=0)
 
         if not rescan and last_index:
@@ -95,8 +96,8 @@ class MediaItems:
                 break
 
         # set all items older than last_index date as stale
-        if rescan and last_index:
-            stale_cnt = self._model.set_media_items_stale(last_checked=last_index)
+        if rescan:
+            stale_cnt = self._model.set_media_items_stale(last_checked=check_date)
 
             if stale_cnt:
                 self._logger.info(f'Marked {stale_cnt} media items as stale')
