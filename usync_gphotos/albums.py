@@ -529,6 +529,10 @@ class Albums:
             for album_item in to_check:
                 media_item_meta = self._media_items.get_item_meta(media_id=album_item['media_id'])
 
+                if not media_item_meta:
+                    self._logger.warning(f'Missing source for media item #{album_item["media_id"]} from album "{album_meta["name"]}"')
+                    continue
+
                 if not self._album_item_exists_fs(album_meta, media_item_meta):
                     self._logger.debug(f'Media item "{media_item_meta["name"]}" not found on filesystem. Setting status to pending_sync')
                     self._model.update_album_item_meta(album_item['album_id'], album_item['media_id'], status='pending_sync')

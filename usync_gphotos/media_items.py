@@ -44,6 +44,10 @@ class MediaItems:
         check_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         info = ActionStats(indexed=0, failed=0)
 
+        filters['mediaTypeFilter'] = {
+            'mediaTypes': ['ALL_MEDIA'],
+        }
+
         if not rescan and last_index:
             from_date = datetime.strptime(last_index, '%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%d')
 
@@ -62,10 +66,11 @@ class MediaItems:
             self._logger.info(f'Searching media items starting from {from_date}')
 
         while True:
-            if from_date:
-                to_index = self._google_api.media_items_search(page_token=page_token, page_size=limit, filters=filters)
-            else:
-                to_index = self._google_api.media_items_list(page_token=page_token, page_size=limit)
+            # if from_date:
+                # to_index = self._google_api.media_items_search(page_token=page_token, page_size=limit, filters=filters)
+            # else:
+                # to_index = self._google_api.media_items_list(page_token=page_token, page_size=limit)
+            to_index = self._google_api.media_items_search(page_token=page_token, page_size=limit, filters=filters)
 
             # if no items to index, break
             if not to_index:
