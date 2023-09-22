@@ -17,7 +17,7 @@ class Albums:
 
         self._google_api: GPhotosApi = google_api
         self._media_items: MediaItems = media_items
-        self._logger: logging.Logger = logger.getChild('library_index')
+        self._logger: logging.Logger = logger.getChild('albums')
 
         self._album_list_limit: int = 50
         self._album_items_list_limit: int = 100
@@ -86,7 +86,6 @@ class Albums:
     # delete stale albums
     # returns a ActionStats object
     def delete_stale(self) -> ActionStats:
-        self._delete_stale_albums_items()
         return self._delete_stale_albums()
 
     def get_album_meta(self, *, album_id: int = None, remote_id: str = None) -> dict:
@@ -119,6 +118,36 @@ class Albums:
     
     def stats(self) -> dict:
         return self._model.get_albums_meta_stats()
+    
+    def scan_synced_albums_fs(self) -> ActionStats:
+        limit = 100
+        offset = 0
+        total = self._model.get_albums_meta_cnt(status='synced')
+        info = ActionStats(fixed=0)
+
+        if not total:
+            return info
+        
+        while True:
+            to_check = self._model.search_albums_meta(limit=limit, offset=offset, status='synced')
+
+            # if no items to check, break
+            if not to_check:
+                break
+
+            for album_meta in to_check:
+                s_info = self._scan_synced_album_items_fs(album_meta)
+
+                if s_info['fixed']:
+                    self._model.update_album_meta(album_meta['album_id'], status='pending_sync')
+                    info.increment(fixed=1)
+
+            offset += limit
+
+            # commit batch
+            self._model.commit()
+
+        return info
     
     def _get_canonicalized_name(self, album_name: str, path: str) -> str:
         unique = 1
@@ -163,6 +192,11 @@ class Albums:
             os.remove(dest_file)
         else:
             self._logger.debug(f'Deletion for album item "{media_item_meta["name"]}" skipped. File not found')
+
+    def _album_item_exists_fs(self, album_meta: dict, media_item_meta: dict) -> bool:
+        dest_file = os.path.join(self._dest_path, album_meta['path'], album_meta['cname'], media_item_meta['cname'])
+
+        return os.path.isfile(dest_file)
     
     def _index_needed(self, album_meta: dict, album: dict) -> bool:
         if not album_meta:
@@ -260,7 +294,7 @@ class Albums:
 
             for album_meta in to_sync:
                 try:
-                    a_info = await self._sync_album(album_meta, **opts)
+                    a_info = await self._sync_album_items(album_meta, **opts)
 
                     if a_info['failed']:
                         raise Exception(f'{a_info["failed"]} album items failed to sync')
@@ -280,7 +314,7 @@ class Albums:
 
         return info
 
-    async def _sync_album(self, album_meta: dict, *, concurrency: int = 1, use_symlinks: bool = True) -> ActionStats:
+    async def _sync_album_items(self, album_meta: dict, *, concurrency: int = 1, use_symlinks: bool = True) -> ActionStats:
         album_id = album_meta['album_id']
         limit = 100
         offset = 0
@@ -356,23 +390,6 @@ class Albums:
         return info
 
     async def _sync_album_item(self, album_meta: dict, media_item_meta: dict, *, use_symlinks: bool = True) -> str:
-        relative_src_path = media_item_meta.get('path')
-        relative_dest_path = album_meta.get('path')
-        album_name = album_meta.get('cname')
-        item_name = media_item_meta.get('cname')
-
-        if not relative_src_path:
-            raise ValueError('missing source path')
-        
-        if not relative_dest_path:
-            raise ValueError('missing destination path')
-        
-        if not album_name:
-            raise ValueError('missing album name')
-        
-        if not item_name:
-            raise ValueError('missing item name')
-        
         if media_item_meta['status'] not in ['synced', 'ignored']:
             raise ValueError('media item is not synced')
 
@@ -380,9 +397,9 @@ class Albums:
             self._logger.debug(f'Sync for album item "{media_item_meta["name"]}" skipped. File is ignored')
             return 'ignored'
         
-        src_file = os.path.join(self._media_items.dest_path, relative_src_path, item_name)
-        dest_path = os.path.join(self._dest_path, relative_dest_path, album_name)
-        dest_file = os.path.join(dest_path, item_name)
+        src_file = os.path.join(self._media_items.dest_path, media_item_meta['path'], media_item_meta['cname'])
+        dest_path = os.path.join(self._dest_path, album_meta['path'], album_meta['cname'])
+        dest_file = os.path.join(dest_path, media_item_meta['cname'])
 
         if not os.path.isfile(src_file):
             raise ValueError(f'missing source file')
@@ -410,6 +427,7 @@ class Albums:
     
     def _delete_stale_albums(self) -> ActionStats:
         limit = 100
+        offset = 0
         total = self._model.get_albums_meta_cnt(status='stale')
         info = ActionStats(deleted=0, failed=0)
 
@@ -417,7 +435,7 @@ class Albums:
             return info
 
         while True:
-            to_delete = self._model.search_albums_meta(limit=limit, status='stale')
+            to_delete = self._model.search_albums_meta(limit=limit, offset=offset, status='stale')
 
             # if no items to delete, break
             if not to_delete:
@@ -425,10 +443,17 @@ class Albums:
 
             for album_meta in to_delete:
                 try:
+                    i_info = self._delete_stale_album_items(album_meta)
+
+                    if i_info['failed']:
+                        raise Exception(f'{i_info["failed"]} album items failed to delete')
+                    
                     self._delete_album_dir(album_meta)
                     self._model.delete_album_meta(album_meta['album_id'])
                 except Exception as e:
                     self._logger.error(f'Deletion for album "{album_meta["name"]}" failed. Reason: {e}')
+
+                    offset += 1
                     info.increment(failed=1)
                 else:
                     info.increment(deleted=1)
@@ -438,9 +463,11 @@ class Albums:
 
         return info
 
-    def _delete_stale_albums_items(self) -> ActionStats:
+    def _delete_stale_album_items(self, album_meta: dict) -> ActionStats:
+        album_id = album_meta['album_id']
         limit = 100
-        total = self._model.get_albums_items_meta_cnt(status='stale')
+        offset = 0
+        total = self._model.get_albums_items_meta_cnt(album_id=album_id, status='stale')
         info = ActionStats(deleted=0, failed=0)
 
         if not total:
@@ -450,14 +477,13 @@ class Albums:
         t_start = datetime.now()
 
         while True:
-            to_delete = self._model.search_albums_items_meta(limit=limit, status='stale')
+            to_delete = self._model.search_albums_items_meta(limit=limit, offset=offset, album_id=album_id, status='stale')
 
             # if no items to delete, break
             if not to_delete:
                 break
 
             for album_item in to_delete:
-                album_meta = self.get_album_meta(album_id=album_item['album_id'])
                 media_item_meta = self._media_items.get_item_meta(media_id=album_item['media_id'])
 
                 try:
@@ -465,6 +491,8 @@ class Albums:
                     self._model.delete_album_item_meta(album_item['album_id'], album_item['media_id'])
                 except Exception as e:
                     self._logger.error(f'Deletion for album item "{media_item_meta["name"]}" failed. Reason: {e}')
+
+                    offset += 1
                     info.increment(failed=1)
                 else:
                     info.increment(deleted=1)
@@ -478,5 +506,38 @@ class Albums:
             (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
 
             self._logger.info(f'Albums items batch delete: {percentage}, eta: {eta}')
+
+        return info
+    
+    def _scan_synced_album_items_fs(self, album_meta: dict) -> ActionStats:
+        album_id = album_meta['album_id']
+        limit = 100
+        offset = 0
+        total = self._model.get_albums_items_meta_cnt(album_id=album_id, status='synced')
+        info = ActionStats(fixed=0)
+
+        if not total:
+            return info
+        
+        while True:
+            to_check = self._model.search_albums_items_meta(limit=limit, offset=offset, album_id=album_id, status='synced')
+
+            # if no items to check, break
+            if not to_check:
+                break
+
+            for album_item in to_check:
+                media_item_meta = self._media_items.get_item_meta(media_id=album_item['media_id'])
+
+                if not self._album_item_exists_fs(album_meta, media_item_meta):
+                    self._logger.debug(f'Media item "{media_item_meta["name"]}" not found on filesystem. Setting status to pending_sync')
+                    self._model.update_album_item_meta(album_item['album_id'], album_item['media_id'], status='pending_sync')
+
+                    info.increment(fixed=1)
+
+            offset += limit
+
+            # commit batch
+            self._model.commit()
 
         return info

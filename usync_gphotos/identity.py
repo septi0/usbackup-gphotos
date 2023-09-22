@@ -100,6 +100,12 @@ class USyncGPhotosIdentity:
                 'albums': options.get('albums', []),
             })
 
+        # Make sure all synced media items exist on filesystem
+        processed = self._media_items.scan_synced_items_fs()
+        
+        if bool(processed):
+            self._logger.info(f'Fixed {processed.total} missing media items from filesystem')
+
         # sync media items
         self._logger.info(f'Syncing media items')
         processed = self._media_items.sync(
@@ -110,6 +116,12 @@ class USyncGPhotosIdentity:
             self._logger.info(f'Synced {processed.total} media items ({processed})')
         else:
             self._logger.info(f'No media items synced')
+
+        # Make sure all synced albums exist on filesystem
+        processed = self._albums.scan_synced_albums_fs()
+
+        if bool(processed):
+            self._logger.info(f'Fixed {processed.total} incomplete albums from filesystem')
 
         # sync albums
         self._logger.info(f'Syncing albums')

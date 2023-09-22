@@ -270,7 +270,7 @@ class AlbumsModel:
             "FROM (",
             "   SELECT * FROM albums_items ai",
             "   LEFT JOIN albums a ON ai.album_id=a.album_id",
-            "   WHERE a.album_id IS NULL OR a.status='stale'",
+            "   WHERE a.status='stale'",
             ") AS t",
             "WHERE albums_items.album_id=t.album_id AND albums_items.media_id=t.media_id",
         )

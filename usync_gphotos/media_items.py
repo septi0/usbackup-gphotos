@@ -198,6 +198,36 @@ class MediaItems:
     def stats(self) -> dict:
         return self._model.get_media_items_meta_stats()
 
+    def scan_synced_items_fs(self) -> ActionStats:
+        limit = 100
+        offset = 0
+        total = self._model.get_media_items_meta_cnt(status='synced')
+        info = ActionStats(fixed=0)
+
+        if not total:
+            return info
+        
+        while True:
+            to_check = self._model.search_media_items_meta(limit=limit, offset=offset, status='synced')
+
+            # if no items to check, break
+            if not to_check:
+                break
+
+            for media_item_meta in to_check:
+                if not self._media_item_exists_fs(media_item_meta):
+                    self._logger.debug(f'Media item "{media_item_meta["name"]}" not found on filesystem. Setting status to pending_sync')
+                    self._model.update_media_item_meta(media_item_meta['media_id'], status='pending_sync')
+
+                    info.increment(fixed=1)
+
+            offset += limit
+
+            # commit batch
+            self._model.commit()
+
+        return info
+
     def _get_canonicalized_name(self, file_name: str, path: str) -> str:
         unique = 1
 
@@ -282,6 +312,11 @@ class MediaItems:
         if length != downloaded:
             os.remove(dest_file)
             raise MediaItemDownloadError(f'Downloaded size {downloaded} does not match content-length {length}')
+
+    def _media_item_exists_fs(self, media_item_meta: dict) -> bool:
+        dest_file = os.path.join(self._dest_path, media_item_meta['path'], media_item_meta['cname'])
+
+        return os.path.isfile(dest_file)
     
     def _index_needed(self, media_item_meta: dict, media_item: dict) -> bool:
         if not media_item_meta:
@@ -390,16 +425,8 @@ class MediaItems:
         if media_item.get('error'):
             raise ValueError(media_item["error"])
         
-        relative_dest_path = media_item_meta.get('path')
-        name = media_item_meta.get('cname')
         download_url = media_item.get('baseUrl')
         media_type = media_item_meta.get('mime_type').split('/')[0]
-
-        if not relative_dest_path:
-            raise ValueError('Missing destination path')
-
-        if not name:
-            raise ValueError('Missing file name')
 
         if not download_url:
             raise ValueError(f'Missing download_url')
@@ -413,8 +440,8 @@ class MediaItems:
         if media_type == 'video' and media_item['mediaMetadata']['video'].get('status') != 'READY':
             raise ValueError(f'Video status is not READY')
 
-        dest_path = os.path.join(self._dest_path, relative_dest_path)
-        dest_file = os.path.join(dest_path, name)
+        dest_path = os.path.join(self._dest_path, media_item_meta['path'])
+        dest_file = os.path.join(dest_path, media_item_meta['cname'])
 
         create_date_ts = datetime.strptime(media_item_meta['create_date'], '%Y-%m-%d %H:%M:%S').timestamp()
         modify_date_ts = datetime.strptime(media_item_meta['modify_date'], '%Y-%m-%d %H:%M:%S').timestamp()
