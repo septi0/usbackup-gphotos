@@ -64,12 +64,15 @@ class AlbumsModel:
 
             return row['cnt']
 
-    def get_albums_items_meta_cnt(self, *, status=None, album_id: int = None) -> int:
+    def get_albums_items_meta_cnt(self, *, status=None, status_not=None, album_id: int = None) -> int:
         placeholders = {}
         where = ['1=1']
 
         if status:
             where.append(self._storage.gen_in_condition('status', status, placeholders))
+
+        if status_not:
+            where.append(self._storage.gen_in_condition('status', status_not, placeholders, negate=True))
 
         if album_id:
             where.append('album_id=:album_id')

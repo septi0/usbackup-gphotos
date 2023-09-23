@@ -203,7 +203,7 @@ class Albums:
         if not album_meta:
             return True
         
-        album_items_cnt = self._model.get_albums_items_meta_cnt(album_id=album_meta['album_id'])
+        album_items_cnt = self._model.get_albums_items_meta_cnt(album_id=album_meta['album_id'], status_not=['stale'])
         
         synced = album_meta['status'] in ('synced', 'pending_sync')
         same_size = int(album_meta['size']) == int(album['mediaItemsCount']) == album_items_cnt

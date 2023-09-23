@@ -34,6 +34,7 @@ def main():
 
     maintenance_parser = subparsers.add_parser('maintenance', help='Maintenance')
     maintenance_parser.add_argument('--delete-stale', dest='delete_stale', help='Delete stale items (photos not found in Google Photos anymore)', action='store_true', default=False)
+    maintenance_parser.add_argument('--delete-orphaned', dest='delete_orphaned', help='Delete orphaned items (photos not found in index but still on filesystem)', action='store_true', default=False)
     maintenance_parser.add_argument('--ignore-media-id', dest='ignore_media_ids', action='append', help='Ignore media id')
     maintenance_parser.add_argument('--reset-ignored', dest='reset_ignored', help='Reset ignored media ids', action='store_true', default=False)
 
@@ -78,6 +79,7 @@ def main():
     elif args.command == 'maintenance':
         usync_gphotos.maintenance({
             'delete_stale': args.delete_stale,
+            'delete_orphaned': args.delete_orphaned,
             'ignore_media_ids': args.ignore_media_ids,
             'reset_ignored': args.reset_ignored,
         })

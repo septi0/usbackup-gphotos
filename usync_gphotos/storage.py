@@ -44,7 +44,7 @@ class Storage:
     def commit(self) -> None:
         self._conn.commit()
 
-    def gen_in_condition(self, field: str, values, data: dict) -> str:
+    def gen_in_condition(self, field: str, values, data: dict, *, negate: bool = False) -> str:
         if not field or not values:
             return ''
         
@@ -57,7 +57,10 @@ class Storage:
             in_values.append(f':{field}_{i}')
             data[f'{field}_{i}'] = s
 
-        return f'{field} IN ({", ".join(in_values)})'
+        if negate:
+            return f'{field} NOT IN ({", ".join(in_values)})'
+        else:
+            return f'{field} IN ({", ".join(in_values)})'
     
     def gen_update_fields(self, fields: dict, data: dict) -> str:
         if not fields:
