@@ -119,8 +119,8 @@ class AlbumsModel:
         query = (
             "SELECT status, COUNT(status) AS cnt",
             "FROM albums",
-            "ORDER BY status ASC",
             "GROUP BY status",
+            "ORDER BY status ASC",
         )
 
         with self._storage.execute(query) as cursor:
@@ -135,8 +135,8 @@ class AlbumsModel:
         query = (
             "SELECT status, COUNT(status) AS cnt",
             "FROM albums_items",
-            "ORDER BY status ASC",
             "GROUP BY status",
+            "ORDER BY status ASC",
         )
 
         with self._storage.execute(query) as cursor:
