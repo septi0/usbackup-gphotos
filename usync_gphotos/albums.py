@@ -70,11 +70,12 @@ class Albums:
             if not page_token:
                 break
 
-        stale_cnt = self._model.set_albums_meta_stale(last_checked=check_date)
-        self._model.set_albums_items_meta_stale()
+        if not filter_albums:
+            stale_cnt = self._model.set_albums_meta_stale(last_checked=check_date)
+            self._model.set_albums_items_meta_stale()
 
-        if stale_cnt:
-            self._logger.info(f'Marked {stale_cnt} albums as stale')
+            if stale_cnt:
+                self._logger.info(f'Marked {stale_cnt} albums as stale')
 
         return info
 
