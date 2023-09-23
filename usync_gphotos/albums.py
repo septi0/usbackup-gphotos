@@ -194,8 +194,11 @@ class Albums:
 
         return indexed
     
-    def stats(self) -> dict:
+    def stats_albums(self) -> dict:
         return self._model.get_albums_meta_stats()
+    
+    def stats_albums_items(self) -> dict:
+        return self._model.get_albums_items_meta_stats()
     
     def scan_synced_albums_items_fs(self) -> ActionStats:
         limit = 100

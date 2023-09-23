@@ -124,7 +124,7 @@ class USyncGPhotosIdentity:
             self._logger.info(f'No media items synced')
 
         # sync albums
-        self._logger.info(f'Syncing albums')
+        self._logger.info(f'Syncing albums items')
 
         processed = self._albums.sync_albums_items(
             concurrency=options.get('concurrency', 20),
@@ -180,7 +180,8 @@ class USyncGPhotosIdentity:
             'media_items_last_index': self._settings.get('media_items_last_index', None),
             'albums_last_index': self._settings.get('albums_last_index', None),
             'media_items': self._media_items.stats(),
-            'albums': self._albums.stats(),
+            'albums': self._albums.stats_albums(),
+            'albums_items': self._albums.stats_albums_items(),
         }
 
     def _setup(self, config: dict) -> None:

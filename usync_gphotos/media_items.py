@@ -443,7 +443,7 @@ class MediaItems:
         
         # for videos, download only if status is READY
         if media_type == 'video' and media_item['mediaMetadata']['video'].get('status') != 'READY':
-            raise ValueError(f'Video "{media_item_meta["name"]}" status is not READY ({media_item["mediaMetadata"]["video"].get("status")})')
+            raise ValueError(f'Video "{media_item_meta["name"]}" is not ready ({media_item["mediaMetadata"]["video"].get("status")})')
 
         dest_path = os.path.join(self._dest_path, media_item_meta['path'])
         dest_file = os.path.join(dest_path, media_item_meta['cname'])
