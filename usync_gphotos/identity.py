@@ -107,10 +107,10 @@ class USyncGPhotosIdentity:
             self._logger.info(f'Fixed {processed.total} missing media items from filesystem')
 
         # Make sure all synced albums exist on filesystem
-        processed = self._albums.scan_synced_albums_fs()
+        processed = self._albums.scan_synced_albums_items_fs()
 
         if bool(processed):
-            self._logger.info(f'Fixed {processed.total} incomplete albums from filesystem')
+            self._logger.info(f'Fixed {processed.total} missing albums items from filesystem')
 
         # sync media items
         self._logger.info(f'Syncing media items')
@@ -126,12 +126,12 @@ class USyncGPhotosIdentity:
         # sync albums
         self._logger.info(f'Syncing albums')
 
-        processed = self._albums.sync(
+        processed = self._albums.sync_albums_items(
             concurrency=options.get('concurrency', 20),
         )
 
         if bool(processed):
-            self._logger.info(f'Synced {processed.total} albums ({processed})')
+            self._logger.info(f'Synced {processed.total} albums items ({processed})')
         else:
             self._logger.info(f'No albums synced')
 
@@ -143,8 +143,16 @@ class USyncGPhotosIdentity:
     def maintenance(self, options: dict) -> None:
         # delete stale media
         if options.get('delete_stale'):
+            self._logger.info(f'Deleting stale albums items')
+            processed = self._albums.delete_stale_albums_items()
+
+            if bool(processed):
+                self._logger.info(f'Deleted {processed.total} albums items ({processed})')
+            else:
+                self._logger.info(f'No albums items deleted')
+
             self._logger.info(f'Deleting stale albums')
-            processed = self._albums.delete_stale()
+            processed = self._albums.delete_stale_albums()
 
             if bool(processed):
                 self._logger.info(f'Deleted {processed.total} albums ({processed})')

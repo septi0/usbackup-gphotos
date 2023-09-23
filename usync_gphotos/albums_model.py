@@ -6,7 +6,7 @@ class AlbumsModel:
     def __init__(self, storage: Storage) -> None:
         self._storage: Storage = storage
 
-        self._album_statuses: list = ['pending_sync', 'sync_error', 'synced', 'stale', 'index_error']
+        self._album_statuses: list = ['indexed', 'stale', 'index_error']
         self._item_statuses: list = ['pending_sync', 'sync_error', 'synced', 'stale', 'ignored']
 
         self._ensure_table()
@@ -34,6 +34,29 @@ class AlbumsModel:
             f"WHERE {' AND '.join(where)}",
             "LIMIT 1",
         )
+
+        with self._storage.execute(query, placeholders) as cursor:
+            row = cursor.fetchone()
+
+            if not row:
+                return {}
+
+            return dict(row)
+        
+    def get_album_item_meta(self, *, album_item_id: int) -> dict:
+        if not album_item_id:
+            raise ValueError('Missing album_item_id')
+
+        placeholders = {}
+
+        query = (
+            "SELECT *",
+            "FROM albums_items",
+            f"WHERE album_item_id=:album_item_id",
+            "LIMIT 1",
+        )
+
+        placeholders['album_item_id'] = album_item_id
 
         with self._storage.execute(query, placeholders) as cursor:
             row = cursor.fetchone()
@@ -141,16 +164,12 @@ class AlbumsModel:
 
             return [dict(r) for r in rows]
         
-    def search_albums_items_meta(self, *, limit: int = 100, offset: int = 0, status = None, album_id: int = None) -> list:
+    def search_albums_items_meta(self, *, limit: int = 100, offset: int = 0, status = None) -> list:
         placeholders = {}
         where = ['1=1']
 
         if status:
             where.append(self._storage.gen_in_condition('status', status, placeholders))
-
-        if album_id:
-            where.append('album_id=:album_id')
-            placeholders['album_id'] = album_id
 
         query = (
             "SELECT *",
@@ -160,7 +179,6 @@ class AlbumsModel:
             "LIMIT :limit OFFSET :offset",
         )
 
-        placeholders['album_id'] = album_id
         placeholders['limit'] = limit
         placeholders['offset'] = offset
 
@@ -202,9 +220,9 @@ class AlbumsModel:
             return cursor.rowcount
 
 
-    def update_album_item_meta(self, album_id: int, media_id: int, **kwargs) -> int:
-        if not album_id or not media_id:
-            raise ValueError('Missing album_id or media_id')
+    def update_album_item_meta(self, album_item_id: int, **kwargs) -> int:
+        if not album_item_id:
+            raise ValueError('Missing album_item_id')
         
         allowed_keys = ['status']
 
@@ -222,12 +240,11 @@ class AlbumsModel:
         query = (
             "UPDATE albums_items",
             f"SET {update}",
-            "WHERE album_id=:album_id AND media_id=:media_id",
+            "WHERE album_item_id=:album_item_id",
             "LIMIT 1",
         )
 
-        placeholders['album_id'] = album_id
-        placeholders['media_id'] = media_id
+        placeholders['album_item_id'] = album_item_id
 
         with self._storage.execute(query, placeholders, commit=False) as cursor:
             return cursor.rowcount
@@ -249,36 +266,26 @@ class AlbumsModel:
         with self._storage.execute(query, placeholders) as cursor:
             return cursor.rowcount
 
-    def set_album_items_meta_stale(self, album_id: str) -> int:
+    def set_albums_items_meta_stale(self, *, album_id: int = None) -> int:
         if not album_id:
             raise ValueError('Missing album_id')
         
         placeholders = {}
+        where = ['1=1']
+
+        if album_id:
+            where.append('album_id=:album_id')
+            placeholders['album_id'] = album_id
 
         query = (
             "UPDATE albums_items",
             "SET status='stale'",
-            "WHERE album_id=:album_id",
+            f"WHERE {' AND '.join(where)}",
         )
 
         placeholders['album_id'] = album_id
 
         with self._storage.execute(query, placeholders) as cursor:
-            return cursor.rowcount
-
-    def set_albums_items_meta_stale(self) -> int:
-        query = (
-            "UPDATE albums_items",
-            "SET status='stale'",
-            "FROM (",
-            "   SELECT * FROM albums_items ai",
-            "   LEFT JOIN albums a ON ai.album_id=a.album_id",
-            "   WHERE a.status='stale'",
-            ") AS t",
-            "WHERE albums_items.album_id=t.album_id AND albums_items.media_id=t.media_id",
-        )
-
-        with self._storage.execute(query) as cursor:
             return cursor.rowcount
 
     def delete_album_meta(self, album_id: int) -> int:
@@ -298,9 +305,9 @@ class AlbumsModel:
         with self._storage.execute(query, placeholders, commit=False) as cursor:
             return cursor.rowcount
 
-    def delete_album_item_meta(self, album_id: int, media_id: int) -> int:
-        if not album_id or not media_id:
-            raise ValueError('Missing album_id or media_id')
+    def delete_album_item_meta(self, album_item_id: int) -> int:
+        if not album_item_id:
+            raise ValueError('Missing album_item_id')
         
         placeholders = {}
 
@@ -310,8 +317,7 @@ class AlbumsModel:
             "LIMIT 1",
         )
 
-        placeholders['album_id'] = album_id
-        placeholders['media_id'] = media_id
+        placeholders['album_item_id'] = album_item_id
 
         with self._storage.execute(query, placeholders, commit=False) as cursor:
             return cursor.rowcount
@@ -393,10 +399,11 @@ class AlbumsModel:
         # create albums_items table if not exists
         query = (
             "CREATE TABLE IF NOT EXISTS albums_items (",
+            "   album_item_id INTEGER PRIMARY KEY AUTOINCREMENT,",
             "   album_id INTEGER NOT NULL,",
             "   media_id INTEGER NOT NULL,",
             "   status TEXT,",
-            "   PRIMARY KEY (album_id, media_id)",
+            "   UNIQUE (album_id, media_id)",
             ")",
         )
 
