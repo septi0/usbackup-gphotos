@@ -68,7 +68,7 @@ class USyncGPhotosIdentity:
 
             if bool(processed):
                 self._update_aseting('media_items_last_index', mi_sdate)
-                self._logger.info(f'Indexed {processed.total} media items ({processed})')
+                self._logger.info(f'Processed {processed.total} media items ({processed})')
             else:
                 self._logger.info(f'No media items indexed')
 
@@ -85,7 +85,7 @@ class USyncGPhotosIdentity:
 
             if bool(processed):
                 self._update_aseting('albums_last_index', a_sdate)
-                self._logger.info(f'Indexed {processed.total} albums ({processed})')
+                self._logger.info(f'Processed {processed.total} albums ({processed})')
             else:
                 self._logger.info(f'No albums indexed')
 
@@ -104,13 +104,13 @@ class USyncGPhotosIdentity:
         processed = self._media_items.scan_synced_items_fs()
 
         if bool(processed):
-            self._logger.info(f'Fixed {processed.total} missing media items from filesystem')
+            self._logger.info(f'Fixed {processed["fixed"]} missing media items from filesystem')
 
         # Make sure all synced albums exist on filesystem
         processed = self._albums.scan_synced_albums_items_fs()
 
         if bool(processed):
-            self._logger.info(f'Fixed {processed.total} missing albums items from filesystem')
+            self._logger.info(f'Fixed {processed["fixed"]} missing albums items from filesystem')
 
         # sync media items
         self._logger.info(f'Syncing media items')
@@ -119,7 +119,7 @@ class USyncGPhotosIdentity:
         )
 
         if bool(processed):
-            self._logger.info(f'Synced {processed.total} media items ({processed})')
+            self._logger.info(f'Processed {processed.total} media items ({processed})')
         else:
             self._logger.info(f'No media items synced')
 
@@ -131,7 +131,7 @@ class USyncGPhotosIdentity:
         )
 
         if bool(processed):
-            self._logger.info(f'Synced {processed.total} albums items ({processed})')
+            self._logger.info(f'Processed {processed.total} albums items ({processed})')
         else:
             self._logger.info(f'No albums synced')
 
@@ -147,7 +147,7 @@ class USyncGPhotosIdentity:
             processed = self._albums.delete_stale_albums_items()
 
             if bool(processed):
-                self._logger.info(f'Deleted {processed.total} albums items ({processed})')
+                self._logger.info(f'Processed {processed.total} albums items ({processed})')
             else:
                 self._logger.info(f'No albums items deleted')
 
@@ -155,7 +155,7 @@ class USyncGPhotosIdentity:
             processed = self._albums.delete_stale_albums()
 
             if bool(processed):
-                self._logger.info(f'Deleted {processed.total} albums ({processed})')
+                self._logger.info(f'Processed {processed.total} albums ({processed})')
             else:
                 self._logger.info(f'No albums deleted')
 
@@ -163,7 +163,7 @@ class USyncGPhotosIdentity:
             processed = self._media_items.delete_stale()
 
             if bool(processed):
-                self._logger.info(f'Deleted {processed.total} media items ({processed})')
+                self._logger.info(f'Processed {processed.total} media items ({processed})')
             else:
                 self._logger.info(f'No media items deleted')
 

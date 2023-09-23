@@ -119,6 +119,7 @@ class AlbumsModel:
         query = (
             "SELECT status, COUNT(status) AS cnt",
             "FROM albums",
+            "ORDER BY status ASC"
             "GROUP BY status",
         )
 
@@ -134,6 +135,7 @@ class AlbumsModel:
         query = (
             "SELECT status, COUNT(status) AS cnt",
             "FROM albums_items",
+            "ORDER BY status ASC"
             "GROUP BY status",
         )
 

@@ -67,6 +67,7 @@ class MediaItemsModel:
         query = (
             "SELECT status, COUNT(status) AS cnt",
             "FROM media_items",
+            "ORDER BY status ASC"
             "GROUP BY status",
         )
 

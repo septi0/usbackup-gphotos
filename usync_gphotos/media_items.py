@@ -42,7 +42,7 @@ class MediaItems:
         limit = self._media_items_list_limit
         filters = {}
         check_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        info = ActionStats(indexed=0, failed=0)
+        info = ActionStats(indexed=0, skipped=0, failed=0)
 
         filters['mediaTypeFilter'] = {
             'mediaTypes': ['ALL_MEDIA'],
@@ -78,24 +78,26 @@ class MediaItems:
 
             media_items = to_index.get('mediaItems', [])
             page_token = to_index.get('nextPageToken')
-            batch_processed = 0
+            batch_indexed = 0
 
             for media_item in media_items:
                 try:
-                    indexed = self.ensure_item_indexed(media_item, commit=False)
+                    status = self.index_media_item(media_item, commit=False)
                 except Exception as e:
                     self._logger.error(f'Index for media item "{media_item["filename"]}" failed. {e}')
                     info.increment(failed=1)
                 else:
-                    if indexed:
-                        batch_processed += 1
+                    if status == 'indexed':
                         info.increment(indexed=1)
+                        batch_indexed += 1
+                    else:
+                        info.increment(skipped=1)
 
             # commit batch
             self._model.commit()
 
-            if batch_processed:
-                self._logger.info(f'Media items batch index: indexed {batch_processed}')
+            if batch_indexed:
+                self._logger.info(f'Media items batch index: indexed {batch_indexed}')
 
             if not page_token:
                 break
@@ -108,6 +110,26 @@ class MediaItems:
                 self._logger.info(f'Marked {stale_cnt} media items as stale')
 
         return info
+    
+    def index_media_item(self, media_item: dict, *, commit=True) -> str:
+        media_item_meta = self.get_item_meta(remote_id=media_item['id'])
+
+        # index item if needed
+        if not self._index_needed(media_item_meta, media_item):
+            last_checked = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self._model.update_media_item_meta(media_item_meta['media_id'], last_checked=last_checked)
+
+            self._logger.debug(f'Index for media item "{media_item_meta["name"]}" skipped. Index not needed')
+
+            return 'skipped'
+        
+        # add media item
+        self._add_media_item(media_item)
+
+        if commit:
+            self._model.commit()
+
+        return 'indexed'
 
     # sync indexed media items
     # returns a ActionStats object
@@ -171,25 +193,6 @@ class MediaItems:
 
     def get_item_meta(self, *, media_id: int = None, remote_id: str = None) -> dict:
         return self._model.get_media_item_meta(media_id=media_id, remote_id=remote_id)
-    
-    def ensure_item_indexed(self, media_item: dict, *, commit = True) -> bool:
-        media_item_meta = self.get_item_meta(remote_id=media_item['id'])
-        indexed = False
-
-        # index item if needed
-        if self._index_needed(media_item_meta, media_item):
-            self._index_media_item(media_item)
-            indexed = True
-        else:
-            last_checked = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            self._model.update_media_item_meta(media_item_meta['media_id'], last_checked=last_checked)
-
-            self._logger.debug(f'Index for media item "{media_item_meta["name"]}" skipped. Index not needed')
-
-        if commit:
-            self._model.commit()
-
-        return indexed
     
     def ignore_items(self, media_items: list) -> None:
         for media_item in media_items:
@@ -334,7 +337,7 @@ class MediaItems:
 
         return False
     
-    def _index_media_item(self, media_item: dict) -> int:
+    def _add_media_item(self, media_item: dict) -> int:
         path = self._gen_path_by_cdate(media_item['mediaMetadata']['creationTime'])
         cname = self._get_canonicalized_name(media_item['filename'], path)
         create_date = datetime.strptime(media_item['mediaMetadata']['creationTime'], '%Y-%m-%dT%H:%M:%SZ').strftime('%Y-%m-%d %H:%M:%S')
@@ -386,8 +389,8 @@ class MediaItems:
 
             # commit batch
             self._model.commit()
-
             t_end = datetime.now()
+            
             processed += len(to_sync)
 
             (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
@@ -415,9 +418,10 @@ class MediaItems:
                 info.increment(failed=1)
             else:
                 status = t.result()
+                status_upd = 'synced' if status in ['synced', 'skipped'] else status
 
                 # update item status
-                self._model.update_media_item_meta(t.get_name(), status=status)
+                self._model.update_media_item_meta(t.get_name(), status=status_upd)
 
                 if status == 'synced':
                     info.increment(synced=1)
@@ -459,7 +463,7 @@ class MediaItems:
                 os.remove(dest_file)
             else:
                 self._logger.debug(f'Sync for media item "{media_item_meta["name"]}" skipped. File already exists')
-                return 'synced'
+                return 'skipped'
         
         # add download type so we can download original file
         if media_type == 'video':
