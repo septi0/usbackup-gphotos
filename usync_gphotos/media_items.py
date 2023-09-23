@@ -34,9 +34,7 @@ class MediaItems:
     def dest_path(self) -> str:
         return self._dest_path
 
-    # index media items
-    # returns a ActionStats object
-    def index(self, *, last_index: str = None, rescan: bool = False) -> ActionStats:
+    def index_items(self, *, last_index: str = None, rescan: bool = False) -> ActionStats:
         from_date = None
         page_token = None
         limit = self._media_items_list_limit
@@ -72,7 +70,6 @@ class MediaItems:
                 # to_index = self._google_api.media_items_list(page_token=page_token, page_size=limit)
             to_index = self._google_api.media_items_search(page_token=page_token, page_size=limit, filters=filters)
 
-            # if no items to index, break
             if not to_index:
                 break
 
@@ -82,7 +79,7 @@ class MediaItems:
 
             for media_item in media_items:
                 try:
-                    status = self.index_media_item(media_item, commit=False)
+                    status = self.index_item(media_item, commit=False)
                 except Exception as e:
                     self._logger.error(f'Index for media item "{media_item["filename"]}" failed. {e}')
                     info.increment(failed=1)
@@ -93,7 +90,6 @@ class MediaItems:
                     else:
                         info.increment(skipped=1)
 
-            # commit batch
             self._model.commit()
 
             if batch_indexed:
@@ -102,8 +98,8 @@ class MediaItems:
             if not page_token:
                 break
 
-        # set all items older than last_index date as stale
         if rescan:
+            # mark all items older than check_date date as stale
             stale_cnt = self._model.set_media_items_stale(last_checked=check_date)
 
             if stale_cnt:
@@ -111,10 +107,9 @@ class MediaItems:
 
         return info
     
-    def index_media_item(self, media_item: dict, *, commit=True) -> str:
+    def index_item(self, media_item: dict, *, commit=True) -> str:
         media_item_meta = self.get_item_meta(remote_id=media_item['id'])
 
-        # index item if needed
         if not self._index_needed(media_item_meta, media_item):
             last_checked = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             self._model.update_media_item_meta(media_item_meta['media_id'], last_checked=last_checked)
@@ -123,17 +118,14 @@ class MediaItems:
 
             return 'skipped'
         
-        # add media item
-        self._add_media_item(media_item)
+        self._add_item(media_item)
 
         if commit:
             self._model.commit()
 
         return 'indexed'
 
-    # sync indexed media items
-    # returns a ActionStats object
-    def sync(self, *, concurrency: int = 1) -> ActionStats:
+    def sync_items(self, *, concurrency: int = 1) -> ActionStats:
         self._dl_session = requests.Session()
 
         # https://cloud.google.com/apis/design/errors
@@ -147,11 +139,9 @@ class MediaItems:
 
         self._dl_session.mount("https://", HTTPAdapter(max_retries=retries, pool_maxsize=concurrency))
     
-        return asyncio.run(self._sync_media_items(concurrency=concurrency))
+        return asyncio.run(self._sync_items(concurrency=concurrency))
 
-    # delete stale media items
-    # returns a ActionStats object
-    def delete_stale(self) -> ActionStats:
+    def delete_obsolete_items(self) -> ActionStats:
         limit = 100
         total = self._model.get_media_items_meta_cnt(status='stale')
         info = ActionStats(deleted=0, failed=0)
@@ -165,13 +155,12 @@ class MediaItems:
         while True:
             to_delete = self._model.search_media_items_meta(limit=limit, status='stale')
 
-            # if no items to delete, break
             if not to_delete:
                 break
 
             for media_item_meta in to_delete:
                 try:
-                    self._delete_media_item_file(media_item_meta)
+                    self._delete_item_file(media_item_meta)
                     self._model.delete_media_item_meta(media_item_meta['media_id'])
                 except Exception as e:
                     self._logger.error(f'Deletion for media item "{media_item_meta["name"]}" failed. {e}')
@@ -179,10 +168,9 @@ class MediaItems:
                 else:
                     info.increment(deleted=1)
 
-            # commit batch
             self._model.commit()
-            t_end = datetime.now()
 
+            t_end = datetime.now()
             processed += len(to_delete)
             
             (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
@@ -194,15 +182,31 @@ class MediaItems:
     def get_item_meta(self, *, media_id: int = None, remote_id: str = None) -> dict:
         return self._model.get_media_item_meta(media_id=media_id, remote_id=remote_id)
     
-    def ignore_items(self, media_items: list) -> None:
+    def ignore_items(self, media_items: list) -> ActionStats:
+        info = ActionStats(ignored=0, failed=0)
+
         for media_item in media_items:
-            self._model.update_media_item_meta(media_item, status='ignored')
+            try:
+                ignored = self._model.update_media_item_meta(media_item, status='ignored')
+                if not ignored:
+                    raise ValueError(f'Media item "{media_item}" not found')
+            except Exception as e:
+                info.increment(failed=1)
+            else:
+                info.increment(ignored=1)
 
         self._model.commit()
 
-    def reset_ignored_items(self) -> int:
-        return self._model.reset_ignored_media_items()
-    
+        return info
+
+    def reset_ignored_items(self) -> ActionStats:
+        info = ActionStats(reset=0)
+
+        reset = self._model.reset_ignored_media_items()
+        info.increment(reset=reset)
+
+        return info 
+
     def stats(self) -> dict:
         return self._model.get_media_items_meta_stats()
 
@@ -218,21 +222,19 @@ class MediaItems:
         while True:
             to_check = self._model.search_media_items_meta(limit=limit, offset=offset, status='synced')
 
-            # if no items to check, break
             if not to_check:
                 break
 
             for media_item_meta in to_check:
-                if not self._media_item_exists_fs(media_item_meta):
+                if not self._item_exists_fs(media_item_meta):
                     self._logger.debug(f'Media item "{media_item_meta["name"]}" not found on filesystem. Setting status to pending_sync')
                     self._model.update_media_item_meta(media_item_meta['media_id'], status='pending_sync')
 
                     info.increment(fixed=1)
 
-            offset += limit
-
-            # commit batch
             self._model.commit()
+
+            offset += limit
 
         return info
 
@@ -256,7 +258,7 @@ class MediaItems:
 
             unique += 1
 
-    async def _get_media_items_to_sync(self, *, limit: int = 100, offset: int = 0) -> list:
+    async def _get_items_to_sync(self, *, limit: int = 100, offset: int = 0) -> list:
         media_items_meta = self._model.search_media_items_meta(limit=limit, offset=offset, status=['pending_sync', 'sync_error'])
 
         if not media_items_meta:
@@ -283,7 +285,7 @@ class MediaItems:
         
         return to_sync
 
-    def _delete_media_item_file(self, media_item_meta: dict) -> None:
+    def _delete_item_file(self, media_item_meta: dict) -> None:
         dest_file = os.path.join(self._dest_path, media_item_meta['path'], media_item_meta['cname'])
 
         self._logger.debug(f'Deleting media item "{media_item_meta["name"]}"')
@@ -301,7 +303,7 @@ class MediaItems:
 
         return os.path.join('items', year, month)
     
-    def _download_media_item(self, url: str, dest_file: str) -> None:
+    def _download_item(self, url: str, dest_file: str) -> None:
         try:
             resp = self._dl_session.get(url, stream=True, timeout=(5, 30))
         except Exception as e:
@@ -321,7 +323,7 @@ class MediaItems:
             os.remove(dest_file)
             raise MediaItemDownloadError(f'Downloaded size {downloaded} does not match content-length {length}')
 
-    def _media_item_exists_fs(self, media_item_meta: dict) -> bool:
+    def _item_exists_fs(self, media_item_meta: dict) -> bool:
         dest_file = os.path.join(self._dest_path, media_item_meta['path'], media_item_meta['cname'])
 
         return os.path.isfile(dest_file)
@@ -337,7 +339,7 @@ class MediaItems:
 
         return False
     
-    def _add_media_item(self, media_item: dict) -> int:
+    def _add_item(self, media_item: dict) -> int:
         path = self._gen_path_by_cdate(media_item['mediaMetadata']['creationTime'])
         cname = self._get_canonicalized_name(media_item['filename'], path)
         create_date = datetime.strptime(media_item['mediaMetadata']['creationTime'], '%Y-%m-%dT%H:%M:%SZ').strftime('%Y-%m-%d %H:%M:%S')
@@ -358,7 +360,7 @@ class MediaItems:
             status='pending_sync',
         )
 
-    async def _sync_media_items(self, *, concurrency: int = 1) -> ActionStats:
+    async def _sync_items(self, *, concurrency: int = 1) -> ActionStats:
         limit = self._media_items_batch_limit
         offset = 0
         total = self._model.get_media_items_meta_cnt(status=['pending_sync', 'sync_error'])
@@ -371,9 +373,8 @@ class MediaItems:
         t_start = datetime.now()
 
         while True:
-            to_sync = await self._get_media_items_to_sync(limit=limit, offset=offset)
+            to_sync = await self._get_items_to_sync(limit=limit, offset=offset)
 
-            # if no items to sync, break
             if not to_sync:
                 break
 
@@ -382,15 +383,14 @@ class MediaItems:
 
             # sync items concurrently
             for chunk in chunks_to_sync:
-                c_info = await self._sync_media_items_concurrently(chunk)
+                c_info = await self._sync_items_concurrently(chunk)
 
                 offset += c_info['failed']
                 info.increment(**dict(c_info))
 
-            # commit batch
             self._model.commit()
+
             t_end = datetime.now()
-            
             processed += len(to_sync)
 
             (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
@@ -399,17 +399,17 @@ class MediaItems:
 
         return info
     
-    async def _sync_media_items_concurrently(self, to_sync: list) -> ActionStats:
+    async def _sync_items_concurrently(self, to_sync: list) -> ActionStats:
         tasks = []
         info = ActionStats(synced=0, skipped=0, failed=0)
 
         for (media_item_meta, media_item) in to_sync:
             # sync media item
-            tasks.append(asyncio.create_task(self._sync_media_item(media_item_meta, media_item), name=media_item_meta['media_id']))
+            tasks.append(asyncio.create_task(self._sync_item(media_item_meta, media_item), name=media_item_meta['media_id']))
 
         await asyncio.gather(*tasks, return_exceptions=True)
 
-        # update items status based on task results
+        # update items status based on async tasks results
         for t in tasks:
             if t.exception():
                 self._logger.error(f'Sync for media item #{t.get_name()} failed. {t.exception()}')
@@ -420,7 +420,6 @@ class MediaItems:
                 status = t.result()
                 status_upd = 'synced' if status in ['synced', 'skipped'] else status
 
-                # update item status
                 self._model.update_media_item_meta(t.get_name(), status=status_upd)
 
                 if status == 'synced':
@@ -430,7 +429,7 @@ class MediaItems:
 
         return info
 
-    async def _sync_media_item(self, media_item_meta: dict, media_item: dict) -> str:
+    async def _sync_item(self, media_item_meta: dict, media_item: dict) -> str:
         if media_item.get('error'):
             raise ValueError(media_item["error"])
         
@@ -478,13 +477,13 @@ class MediaItems:
         tmp_file = tempfile.NamedTemporaryFile(delete=False).name
 
         # download file
-        await asyncio.to_thread(self._download_media_item, download_url, tmp_file)
+        await asyncio.to_thread(self._download_item, download_url, tmp_file)
 
         if not os.path.isdir(dest_path):
             os.makedirs(dest_path)
 
         # move tmp file to dest file
-        # Note: don't use or.rename() as it will fail if directory is on a different filesystem
+        # Note: don't use os.rename() as it will fail if directory is on a different filesystem
         shutil.move(tmp_file, dest_file)
 
         # set file create / modify time

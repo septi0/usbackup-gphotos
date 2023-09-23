@@ -28,10 +28,10 @@ class USyncGPhotosManager:
                 identity.unlock()
             except Exception as e:
                 identity.unlock()
-                self._logger.exception(f'Media index for identity "{identity.name}" failed. Reason: {e}', exc_info=True)
+                self._logger.exception(f'Index action for identity "{identity.name}" failed. Reason: {e}', exc_info=True)
             except KeyboardInterrupt:
                 identity.unlock()
-                self._logger.info(f'Media index for identity "{identity.name}" interrupted by user')
+                self._logger.info(f'Index action for identity "{identity.name}" interrupted by user')
                 break
 
     def sync(self, options: dict) -> None:
@@ -42,10 +42,21 @@ class USyncGPhotosManager:
                 identity.unlock()
             except Exception as e:
                 identity.unlock()
-                self._logger.exception(f'Media sync for identity "{identity.name}" failed. Reason: {e}', exc_info=True)
+                self._logger.exception(f'Sync action for identity "{identity.name}" failed. Reason: {e}', exc_info=True)
             except KeyboardInterrupt:
                 identity.unlock()
-                self._logger.info(f'Media sync for identity "{identity.name}" interrupted by user')
+                self._logger.info(f'Sync action for identity "{identity.name}" interrupted by user')
+                break
+
+    def delete_obsolete(self) -> None:
+        for identity in self._identities:
+            try:
+                identity.delete_obsolete()
+            except Exception as e:
+                self._logger.exception(f'Delete obsolete action for identity "{identity.name}" failed. Reason: {e}', exc_info=True)
+            except KeyboardInterrupt:
+                self._logger.info(
+                    f'Delete obsolete action for identity "{identity.name}" interrupted by user')
                 break
 
     def auth(self) -> None:
@@ -53,19 +64,9 @@ class USyncGPhotosManager:
             try:
                 identity.auth()
             except Exception as e:
-                self._logger.exception(f'Authentication for identity "{identity.name}" failed. Reason: {e}', exc_info=True)
+                self._logger.exception(f'Authenticate action for identity "{identity.name}" failed. Reason: {e}', exc_info=True)
             except KeyboardInterrupt:
-                self._logger.info(f'Authentication for identity "{identity.name}" interrupted by user')
-                break
-
-    def maintenance(self, options: dict) -> None:
-        for identity in self._identities:
-            try:
-                identity.maintenance(options)
-            except Exception as e:
-                self._logger.exception(f'Maintenance for identity "{identity.name}" failed. Reason: {e}', exc_info=True)
-            except KeyboardInterrupt:
-                self._logger.info(f'Maintenance for identity "{identity.name}" interrupted by user')
+                self._logger.info(f'Authenticate action for identity "{identity.name}" interrupted by user')
                 break
 
     def stats(self) -> None:
@@ -79,6 +80,16 @@ class USyncGPhotosManager:
             print(f'  Albums: {", ".join([f"{value} {key}" for key, value in stats["albums"].items()])}')
             print(f'  Albums items: {", ".join([f"{value} {key}" for key, value in stats["albums_items"].items()])}')
             print()
+
+    def ignore(self, options: dict) -> None:
+        for identity in self._identities:
+            try:
+                identity.ignore(options)
+            except Exception as e:
+                self._logger.exception(f'Ignore action for identity "{identity.name}" failed. Reason: {e}', exc_info=True)
+            except KeyboardInterrupt:
+                self._logger.info(f'Ignore action for identity "{identity.name}" interrupted by user')
+                break
 
     def _parse_config(self, config_files: list[str]) -> dict:
         if not config_files:

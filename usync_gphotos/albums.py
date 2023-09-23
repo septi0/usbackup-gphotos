@@ -26,10 +26,8 @@ class Albums:
     def dest_path(self) -> str:
         return self._dest_path
 
-    # index albums
     # Note! rescan not used for now. Due to the limitations of the API, we can't get albums sorted by date
-    # returns a ActionStats object
-    def index(self, *, last_index: str = None, rescan: bool = False, filter_albums: list = []) -> ActionStats:
+    def index_albums(self, *, last_index: str = None, rescan: bool = False, filter_albums: list = []) -> ActionStats:
         page_token = None
         limit = self._album_list_limit
         check_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -40,7 +38,6 @@ class Albums:
         while True:
             to_index = self._google_api.albums_list(page_token=page_token, page_size=limit)
 
-            # if no albums to index, break
             if not to_index:
                 break
 
@@ -59,13 +56,13 @@ class Albums:
                     else:
                         info.increment(skipped=1)
 
-            # commit batch
             self._model.commit()
 
             if not page_token:
                 break
 
         if not filter_albums:
+            # mark all albums older than check_date as stale
             stale_cnt = self._model.set_albums_meta_stale(last_checked=check_date)
             self._propagate_stale_albums()
 
@@ -94,7 +91,6 @@ class Albums:
 
             return 'skipped'
         
-        # add album
         self._add_album(album)
 
         if commit:
@@ -104,7 +100,6 @@ class Albums:
         album_meta = self._model.get_album_meta(remote_id=album['id'])
 
         try:
-            # index album items
             self.index_album_items(album_meta['album_id'], commit=commit)
         except Exception as e:
             self._model.update_album_meta(album_meta['album_id'], status='index_error')
@@ -124,7 +119,6 @@ class Albums:
         while True:
             to_index = self._google_api.media_items_search(album_id=album_meta['remote_id'], page_token=page_token, page_size=limit)
 
-            # if no items to index, break
             if not to_index:
                 break
 
@@ -132,7 +126,6 @@ class Albums:
             page_token = to_index.get('nextPageToken')
 
             for media_item in media_items:
-                # add album item
                 self._add_album_item(album_meta, media_item)
                 info.increment(indexed=1)
 
@@ -146,14 +139,10 @@ class Albums:
 
         return info
 
-    # sync albums items
-    # returns a ActionStats object
     def sync_albums_items(self, *, concurrency: int = 1, use_symlinks: bool = True) -> ActionStats:
         return asyncio.run(self._sync_albums_items(concurrency=concurrency, use_symlinks=use_symlinks))
 
-    # delete stale albums items
-    # returns a ActionStats object
-    def delete_stale_albums(self) -> ActionStats:
+    def delete_obsolete_albums(self) -> ActionStats:
         limit = 100
         offset = 0
         total = self._model.get_albums_meta_cnt(status='stale')
@@ -165,7 +154,6 @@ class Albums:
         while True:
             to_delete = self._model.search_albums_meta(limit=limit, offset=offset, status='stale')
 
-            # if no items to delete, break
             if not to_delete:
                 break
 
@@ -181,14 +169,11 @@ class Albums:
                 else:
                     info.increment(deleted=1)
 
-            # commit batch
             self._model.commit()
 
         return info
     
-    # delete stale albums items
-    # returns a ActionStats object
-    def delete_stale_albums_items(self) -> ActionStats:
+    def delete_obsolete_albums_items(self) -> ActionStats:
         limit = 100
         offset = 0
         total = self._model.get_albums_items_meta_cnt(status='stale')
@@ -203,7 +188,6 @@ class Albums:
         while True:
             to_delete = self._model.search_albums_items_meta(limit=limit, offset=offset, status='stale')
 
-            # if no items to delete, break
             if not to_delete:
                 break
 
@@ -222,10 +206,9 @@ class Albums:
                 else:
                     info.increment(deleted=1)
 
-            # commit batch
             self._model.commit()
-            t_end = datetime.now()
 
+            t_end = datetime.now()
             processed += len(to_delete)
             
             (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
@@ -255,7 +238,6 @@ class Albums:
         while True:
             to_check = self._model.search_albums_items_meta(limit=limit, offset=offset, status='synced')
 
-            # if no items to check, break
             if not to_check:
                 break
 
@@ -273,10 +255,9 @@ class Albums:
 
                     info.increment(fixed=1)
 
-            offset += limit
-
-            # commit batch
             self._model.commit()
+
+            offset += limit
 
         return info
     
@@ -340,7 +321,6 @@ class Albums:
         while True:
             to_propagate = self._model.search_albums_meta(limit=limit, offset=offset, status='stale')
 
-            # if no items to propagate, break
             if not to_propagate:
                 break
 
@@ -386,7 +366,7 @@ class Albums:
 
     def _add_album_item(self, album_meta: dict, media_item: dict) -> int:
         # make sure media item is indexed
-        self._media_items.index_media_item(media_item)
+        self._media_items.index_item(media_item)
 
         media_item_meta = self._media_items.get_item_meta(remote_id=media_item['id'])
 
@@ -414,7 +394,6 @@ class Albums:
         while True:
             to_sync = self._model.search_albums_items_meta(limit=limit, offset=offset, status=['pending_sync', 'sync_error'])
 
-            # if no items to sync, break
             if not to_sync:
                 break
 
@@ -428,10 +407,9 @@ class Albums:
                 offset += c_info['failed']
                 info.increment(**dict(c_info))
 
-            # commit batch
             self._model.commit()
-            t_end = datetime.now()
 
+            t_end = datetime.now()
             processed += len(to_sync)
             
             (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
@@ -452,7 +430,7 @@ class Albums:
 
         await asyncio.gather(*tasks, return_exceptions=True)
 
-        # update items status based on task results
+        # update items status based on async tasks results
         for t in tasks:
             if t.exception():
                 self._logger.error(f'Sync for album item #{t.get_name()} failed. Reason {t.exception()}')
