@@ -22,6 +22,8 @@ class Albums:
         self._album_list_limit: int = 50
         self._album_items_list_limit: int = 100
 
+        self._albums_dir = 'albums'
+
     @property
     def dest_path(self) -> str:
         return self._dest_path
@@ -143,7 +145,7 @@ class Albums:
 
     def sync_albums_items(self, *, concurrency: int = 1, use_symlinks: bool = True) -> ActionStats:
         return asyncio.run(self._sync_albums_items(concurrency=concurrency, use_symlinks=use_symlinks))
-
+    
     def delete_obsolete_albums(self) -> ActionStats:
         limit = 100
         offset = 0
@@ -174,48 +176,15 @@ class Albums:
             self._model.commit()
 
         return info
-    
+
     def delete_obsolete_albums_items(self) -> ActionStats:
-        limit = 100
-        offset = 0
-        total = self._model.get_albums_items_meta_cnt(status='stale')
         info = ActionStats(deleted=0, failed=0)
 
-        if not total:
-            return info
+        db_info = self._delete_obsolete_albums_items_db()
+        info.increment(**dict(db_info))
 
-        processed = 0
-        t_start = datetime.now()
-
-        while True:
-            to_delete = self._model.search_albums_items_meta(limit=limit, offset=offset, status='stale')
-
-            if not to_delete:
-                break
-
-            for album_item in to_delete:
-                album_meta = self._model.get_album_meta(album_id=album_item['album_id'])
-                media_item_meta = self._media_items.get_item_meta(media_id=album_item['media_id'])
-
-                try:
-                    self._delete_album_item_file(album_meta, media_item_meta)
-                    self._model.delete_album_item_meta(album_item['album_item_id'])
-                except Exception as e:
-                    self._logger.error(f'Deletion for media item "{media_item_meta["name"]}" of album "{album_meta["name"]}" failed. Reason: {e}')
-
-                    offset += 1
-                    info.increment(failed=1)
-                else:
-                    info.increment(deleted=1)
-
-            self._model.commit()
-
-            t_end = datetime.now()
-            processed += len(to_delete)
-            
-            (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
-
-            self._logger.info(f'Albums items batch delete: {percentage}, eta: {eta}')
+        fs_info = self._delete_obsolete_albums_items_fs()
+        info.increment(**dict(fs_info))
 
         return info
 
@@ -243,17 +212,14 @@ class Albums:
             if not to_check:
                 break
 
-            for album_item in to_check:
-                album_meta = self._model.get_album_meta(album_id=album_item['album_id'])
-                media_item_meta = self._media_items.get_item_meta(media_id=album_item['media_id'])
-
-                if not album_meta or not media_item_meta:
-                    self._logger.warning(f'Missing album meta or media item meta for album item #{album_item["album_item_id"]}')
+            for album_item_meta in to_check:
+                if not album_item_meta['item_cname'] or not album_item_meta['album_cname']:
+                    self._logger.warning(f'Missing meta for album item #{album_item_meta["album_item_id"]}')
                     continue
 
-                if not self._album_item_exists_fs(album_meta, media_item_meta):
-                    self._logger.debug(f'Media item "{media_item_meta["name"]}" not found on filesystem. Setting status to pending_sync')
-                    self._model.update_album_item_meta(album_item['album_item_id'], status='pending_sync')
+                if not self._album_item_exists_fs(album_item_meta):
+                    self._logger.debug(f'Media item "{album_item_meta["item_name"]}" not found on filesystem. Setting status to pending_sync')
+                    self._model.update_album_item_meta(album_item_meta['album_item_id'], status='pending_sync')
 
                     info.increment(fixed=1)
 
@@ -287,28 +253,35 @@ class Albums:
         self._logger.info(f'Deleting album "{album_meta["name"]}"')
 
         if os.path.isdir(dest_dir):
-            try:
-                os.rmdir(dest_dir)
-            except OSError as e:
-                self._logger.error(f'Deletion for album "{album_meta["name"]}" failed. Reason: {e}')
+            os.rmdir(dest_dir)
         else:
             self._logger.debug(f'Deletion for album "{album_meta["name"]}" skipped. Directory not found')
 
-    def _delete_album_item_file(self, album_meta: dict, media_item_meta: dict) -> None:
-        if not album_meta or not media_item_meta:
-            return
+    def _delete_album_item_file(self, album_item_meta: dict) -> None:
+        if not album_item_meta['item_cname'] or not album_item_meta['album_cname']:
+            raise ValueError(f'Missing meta for album item #{album_item_meta["album_item_id"]}')
         
-        dest_file = os.path.join(self._dest_path, album_meta['path'], album_meta['cname'], media_item_meta['cname'])
+        dest_file = os.path.join(
+            self._dest_path,
+            album_item_meta['album_path'],
+            album_item_meta['album_cname'],
+            album_item_meta['item_cname']
+        )
 
-        self._logger.debug(f'Deleting media item "{media_item_meta["name"]}" of album "{album_meta["name"]}"')
+        self._logger.debug(f'Deleting album item "{album_item_meta["item_name"]}" ("{album_item_meta["album_name"]}")')
 
         if os.path.isfile(dest_file):
             os.remove(dest_file)
         else:
-            self._logger.debug(f'Deletion for media item "{media_item_meta["name"]}" of album "{album_meta["name"]}" skipped. File not found')
+            self._logger.debug(f'Deletion for album item "{album_item_meta["item_name"]}" ("{album_item_meta["album_name"]}") skipped. File not found')
 
-    def _album_item_exists_fs(self, album_meta: dict, media_item_meta: dict) -> bool:
-        dest_file = os.path.join(self._dest_path, album_meta['path'], album_meta['cname'], media_item_meta['cname'])
+    def _album_item_exists_fs(self, album_item_meta: dict) -> bool:
+        dest_file = os.path.join(
+            self._dest_path,
+            album_item_meta['album_path'],
+            album_item_meta['album_cname'],
+            album_item_meta['item_cname']
+        )
 
         return os.path.isfile(dest_file)
     
@@ -348,7 +321,7 @@ class Albums:
         return False
 
     def _add_album(self, album: dict) -> int:
-        path = 'albums'
+        path = self._albums_dir
         cname = self._get_canonicalized_name(album['title'], path)
         index_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
@@ -367,12 +340,12 @@ class Albums:
         )
 
     def _add_album_item(self, album_meta: dict, media_item: dict) -> int:
-        # make sure media item is indexed
+        # make sure album item is indexed
         self._media_items.index_item(media_item)
 
         media_item_meta = self._media_items.get_item_meta(remote_id=media_item['id'])
 
-        self._logger.debug(f'Indexing media item "{media_item["filename"]}"')
+        self._logger.debug(f'Indexing album item "{media_item["filename"]}"')
 
         return self._model.add_album_item_meta(
             album_id=album_meta['album_id'],
@@ -424,11 +397,9 @@ class Albums:
         tasks = []
         info = ActionStats(synced=0, skipped=0, failed=0)
 
-        for album_item in to_sync:
-            album_meta = self._model.get_album_meta(album_id=album_item['album_id'])
-            media_item_meta = self._media_items.get_item_meta(media_id=album_item['media_id'])
+        for album_item_meta in to_sync:
             # sync album item
-            tasks.append(asyncio.create_task(self._sync_album_item(album_meta, media_item_meta, **opts), name=album_item['album_item_id']))
+            tasks.append(asyncio.create_task(self._sync_album_item(album_item_meta, **opts), name=album_item_meta['album_item_id']))
 
         await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -452,27 +423,30 @@ class Albums:
 
         return info
 
-    async def _sync_album_item(self, album_meta: dict, media_item_meta: dict, *, use_symlinks: bool = True) -> str:
-        if media_item_meta['status'] not in ['synced', 'ignored']:
+    async def _sync_album_item(self, album_item_meta: dict, *, use_symlinks: bool = True) -> str:
+        if not album_item_meta['item_cname'] or not album_item_meta['album_cname']:
+            raise ValueError(f'Missing meta for album item #{album_item_meta["album_item_id"]}')
+        
+        if album_item_meta['item_status'] not in ['synced', 'ignored']:
             raise ValueError('media item is not synced')
 
-        if media_item_meta['status'] == 'ignored':
-            self._logger.debug(f'Sync for media item "{media_item_meta["name"]}" of album "{album_meta["name"]}" skipped. Media item is ignored')
+        if album_item_meta['item_status'] == 'ignored':
+            self._logger.debug(f'Sync for album item "{album_item_meta["item_name"]}" ("{album_item_meta["album_name"]}") skipped. Media item is ignored')
             return 'ignored'
         
-        src_file = os.path.join(self._media_items.dest_path, media_item_meta['path'], media_item_meta['cname'])
-        dest_path = os.path.join(self._dest_path, album_meta['path'], album_meta['cname'])
-        dest_file = os.path.join(dest_path, media_item_meta['cname'])
+        src_file = os.path.join(self._media_items.dest_path, album_item_meta['item_path'], album_item_meta['item_cname'])
+        dest_path = os.path.join(self._dest_path, album_item_meta['album_path'], album_item_meta['album_cname'])
+        dest_file = os.path.join(dest_path, album_item_meta['item_cname'])
 
         if not os.path.isfile(src_file):
             raise ValueError(f'missing source file')
 
         # if file already exists, skip
         if os.path.isfile(dest_file):
-            self._logger.debug(f'Sync for media item "{media_item_meta["name"]}" of album "{album_meta["name"]}" skipped. Item already exists')
+            self._logger.debug(f'Sync for album item "{album_item_meta["item_name"]}" ("{album_item_meta["album_name"]}") skipped. Item already exists')
             return 'skipped'
 
-        self._logger.debug(f'Linking media item "{media_item_meta["name"]}" of album "{album_meta["name"]}"')
+        self._logger.debug(f'Linking album item "{album_item_meta["item_name"]}" ("{album_item_meta["album_name"]}")')
 
         if not os.path.isdir(dest_path):
             os.makedirs(dest_path)
@@ -487,3 +461,69 @@ class Albums:
             os.link(src_file, dest_file)
 
         return 'synced'
+
+    def _delete_obsolete_albums_items_db(self) -> ActionStats:
+        limit = 100
+        offset = 0
+        total = self._model.get_albums_items_meta_cnt(status='stale')
+        info = ActionStats(deleted=0, failed=0)
+
+        if not total:
+            return info
+
+        processed = 0
+        t_start = datetime.now()
+
+        while True:
+            to_delete = self._model.search_albums_items_meta(limit=limit, offset=offset, status='stale')
+
+            if not to_delete:
+                break
+
+            for album_item_meta in to_delete:
+                try:
+                    self._delete_album_item_file(album_item_meta)
+                    self._model.delete_album_item_meta(album_item_meta['album_item_id'])
+                except Exception as e:
+                    self._logger.error(f'Deletion for album item "{album_item_meta["item_name"]}" ("{album_item_meta["album_name"]}") failed. Reason: {e}')
+
+                    offset += 1
+                    info.increment(failed=1)
+                else:
+                    info.increment(deleted=1)
+
+            self._model.commit()
+
+            t_end = datetime.now()
+            processed += len(to_delete)
+            
+            (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
+
+            self._logger.info(f'Albums items batch delete: {percentage}, eta: {eta}')
+
+        return info
+    
+    def _delete_obsolete_albums_items_fs(self) -> ActionStats:
+        albums_items_path = os.path.join(self._dest_path, self._albums_dir)
+        info = ActionStats(deleted=0, failed=0)
+
+        for root, dirs, files in os.walk(albums_items_path):
+            if not files:
+                continue
+
+            for file in files:
+                album = os.path.basename(root)
+                album_item_meta = self._model.search_albums_items_meta(album_cname=album, item_cname=file)
+
+                if not album_item_meta:
+                    self._logger.debug(f'Album item "{file}" not found in database. Deleting')
+
+                    try:
+                        os.remove(os.path.join(root, file))
+                    except Exception as e:
+                        self._logger.error(f'Deletion for album item "{file}" failed. {e}')
+                        info.increment(failed=1)
+                    else:
+                        info.increment(deleted=1)
+
+        return info

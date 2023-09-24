@@ -25,8 +25,8 @@ class Storage:
 
         # query_debug = query
 
-        # # replace placeholders with values
-        # for placeholder, value in placeholders.items():
+        # replace params with values
+        # for placeholder, value in (params or {}).items():
         #     query_debug = query_debug.replace(f':{placeholder}', f'{value}')
 
         # print(query_debug)
@@ -54,8 +54,9 @@ class Storage:
         in_values = []
 
         for i, s in enumerate(values):
-            in_values.append(f':{field}_{i}')
-            data[f'{field}_{i}'] = s
+            field_safe = field.replace('.', '_')
+            in_values.append(f':{field_safe}_{i}')
+            data[f'{field_safe}_{i}'] = s
 
         if negate:
             return f'{field} NOT IN ({", ".join(in_values)})'

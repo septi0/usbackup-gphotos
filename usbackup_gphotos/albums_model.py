@@ -9,6 +9,8 @@ class AlbumsModel:
         self._album_statuses: list = ['indexed', 'stale', 'index_error']
         self._item_statuses: list = ['pending_sync', 'sync_error', 'synced', 'stale', 'ignored']
 
+        self._album_item_fields = 'mi.name item_name, a.name album_name, mi.cname item_cname, a.cname album_cname, mi.path item_path, a.path album_path, mi.status item_status, a.status album_status'
+
         self._ensure_table()
 
     def commit(self) -> None:
@@ -50,9 +52,11 @@ class AlbumsModel:
         placeholders = {}
 
         query = (
-            "SELECT *",
-            "FROM albums_items",
-            f"WHERE album_item_id=:album_item_id",
+            f"SELECT ai.*, {self._album_item_fields}",
+            "FROM albums_items ai",
+            "LEFT JOIN albums a ON ai.album_id=a.album_id",
+            "LEFT JOIN media_items mi ON ai.media_id=mi.media_id",
+            f"WHERE ai.album_item_id=:album_item_id",
             "LIMIT 1",
         )
 
@@ -181,16 +185,26 @@ class AlbumsModel:
 
             return [dict(r) for r in rows]
         
-    def search_albums_items_meta(self, *, limit: int = 100, offset: int = 0, status = None) -> list:
+    def search_albums_items_meta(self, *, limit: int = 100, offset: int = 0, status=None, album_cname: str = None, item_cname: str = None) -> list:
         placeholders = {}
         where = ['1=1']
 
         if status:
-            where.append(self._storage.gen_in_condition('status', status, placeholders))
+            where.append(self._storage.gen_in_condition('ai.status', status, placeholders))
+
+        if album_cname:
+            where.append('a.cname=:album_cname')
+            placeholders['album_cname'] = album_cname
+
+        if item_cname:
+            where.append('mi.cname=:item_cname')
+            placeholders['item_cname'] = item_cname
 
         query = (
-            "SELECT *",
-            "FROM albums_items",
+            f"SELECT ai.*, {self._album_item_fields}",
+            "FROM albums_items ai",
+            "LEFT JOIN albums a ON ai.album_id=a.album_id",
+            "LEFT JOIN media_items mi ON ai.media_id=mi.media_id",
             f"WHERE {' AND '.join(where)}",
             "ORDER BY album_id ASC, media_id ASC",
             "LIMIT :limit OFFSET :offset",

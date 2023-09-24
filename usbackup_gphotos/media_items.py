@@ -30,6 +30,8 @@ class MediaItems:
 
         self._dl_session: requests.Session = None
 
+        self._items_dir = 'items'
+
     @property
     def dest_path(self) -> str:
         return self._dest_path
@@ -64,10 +66,6 @@ class MediaItems:
             self._logger.info(f'Searching media items starting from {from_date}')
 
         while True:
-            # if from_date:
-                # to_index = self._google_api.media_items_search(page_token=page_token, page_size=limit, filters=filters)
-            # else:
-                # to_index = self._google_api.media_items_list(page_token=page_token, page_size=limit)
             to_index = self._google_api.media_items_search(page_token=page_token, page_size=limit, filters=filters)
 
             if not to_index:
@@ -142,40 +140,13 @@ class MediaItems:
         return asyncio.run(self._sync_items(concurrency=concurrency))
 
     def delete_obsolete_items(self) -> ActionStats:
-        limit = 100
-        total = self._model.get_media_items_meta_cnt(status='stale')
         info = ActionStats(deleted=0, failed=0)
 
-        if not total:
-            return info
+        db_info = self._delete_obsolete_items_db()
+        info.increment(**dict(db_info))
 
-        processed = 0
-        t_start = datetime.now()
-
-        while True:
-            to_delete = self._model.search_media_items_meta(limit=limit, status='stale')
-
-            if not to_delete:
-                break
-
-            for media_item_meta in to_delete:
-                try:
-                    self._delete_item_file(media_item_meta)
-                    self._model.delete_media_item_meta(media_item_meta['media_id'])
-                except Exception as e:
-                    self._logger.error(f'Deletion for media item "{media_item_meta["name"]}" failed. {e}')
-                    info.increment(failed=1)
-                else:
-                    info.increment(deleted=1)
-
-            self._model.commit()
-
-            t_end = datetime.now()
-            processed += len(to_delete)
-            
-            (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
-
-            self._logger.info(f'Media items batch delete: {percentage}, eta: {eta}')
+        fs_info = self._delete_obsolete_items_fs()
+        info.increment(**dict(fs_info))
 
         return info
 
@@ -301,7 +272,7 @@ class MediaItems:
         year = date.strftime('%Y')
         month = date.strftime('%m')
 
-        return os.path.join('items', year, month)
+        return os.path.join(self._items_dir, year, month)
     
     def _download_item(self, url: str, dest_file: str) -> None:
         try:
@@ -493,3 +464,66 @@ class MediaItems:
         os.chmod(dest_file, 0o644)
 
         return 'synced'
+
+    def _delete_obsolete_items_db(self) -> ActionStats:
+        limit = 100
+        total = self._model.get_media_items_meta_cnt(status='stale')
+        info = ActionStats(deleted=0, failed=0)
+
+        if not total:
+            return info
+
+        processed = 0
+        t_start = datetime.now()
+
+        while True:
+            to_delete = self._model.search_media_items_meta(limit=limit, status='stale')
+
+            if not to_delete:
+                break
+
+            for media_item_meta in to_delete:
+                try:
+                    self._delete_item_file(media_item_meta)
+                    self._model.delete_media_item_meta(media_item_meta['media_id'])
+                except Exception as e:
+                    self._logger.error(f'Deletion for media item "{media_item_meta["name"]}" failed. {e}')
+                    info.increment(failed=1)
+                else:
+                    info.increment(deleted=1)
+
+            self._model.commit()
+
+            t_end = datetime.now()
+            processed += len(to_delete)
+            
+            (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
+
+            self._logger.info(f'Media items batch delete: {percentage}, eta: {eta}')
+
+        return info
+    
+    def _delete_obsolete_items_fs(self) -> ActionStats:
+        items_path = os.path.join(self._dest_path, self._items_dir)
+        info = ActionStats(deleted=0, failed=0)
+
+        for root, dirs, files in os.walk(items_path):
+            if not files:
+                continue
+
+            for file in files:
+                relative_path = os.path.relpath(root, self._dest_path)
+                media_item_meta = self._model.search_media_items_meta(cname=file, path=relative_path)
+
+                if not media_item_meta:
+                    self._logger.debug(f'Media item "{file}" not found in database. Deleting')
+                    
+                    try:
+                        os.remove(os.path.join(root, file))
+                    except Exception as e:
+                        self._logger.error(f'Deletion for media item "{file}" failed. {e}')
+                        info.increment(failed=1)
+                    else:
+                        info.increment(deleted=1)
+
+        return info
