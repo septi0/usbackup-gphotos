@@ -259,7 +259,8 @@ class Albums:
 
     def _delete_album_item_file(self, album_item_meta: dict) -> None:
         if not album_item_meta['item_cname'] or not album_item_meta['album_cname']:
-            raise ValueError(f'Missing meta for album item #{album_item_meta["album_item_id"]}')
+            self._logger.debug(f'Missing meta for album item #{album_item_meta["album_item_id"]}')
+            return
         
         dest_file = os.path.join(
             self._dest_path,
