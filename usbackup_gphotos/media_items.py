@@ -473,9 +473,6 @@ class MediaItems:
         if not total:
             return info
 
-        processed = 0
-        t_start = datetime.now()
-
         while True:
             to_delete = self._model.search_media_items_meta(limit=limit, status='stale')
 
@@ -494,13 +491,6 @@ class MediaItems:
 
             self._model.commit()
 
-            t_end = datetime.now()
-            processed += len(to_delete)
-            
-            (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
-
-            self._logger.info(f'Media items batch delete: {percentage}, eta: {eta}')
-
         return info
     
     def _delete_obsolete_items_fs(self) -> ActionStats:
@@ -517,7 +507,7 @@ class MediaItems:
 
                 if not media_item_meta:
                     self._logger.debug(f'Media item "{file}" not found in database. Deleting')
-                    
+
                     try:
                         os.remove(os.path.join(root, file))
                     except Exception as e:

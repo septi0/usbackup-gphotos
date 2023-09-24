@@ -344,7 +344,7 @@ class AlbumsModel:
 
         query = (
             "DELETE FROM albums_items",
-            "WHERE album_id=:album_id AND media_id=:media_id",
+            "WHERE album_item_id=:album_item_id",
             "LIMIT 1",
         )
 

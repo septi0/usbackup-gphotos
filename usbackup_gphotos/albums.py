@@ -471,9 +471,6 @@ class Albums:
         if not total:
             return info
 
-        processed = 0
-        t_start = datetime.now()
-
         while True:
             to_delete = self._model.search_albums_items_meta(limit=limit, offset=offset, status='stale')
 
@@ -493,13 +490,6 @@ class Albums:
                     info.increment(deleted=1)
 
             self._model.commit()
-
-            t_end = datetime.now()
-            processed += len(to_delete)
-            
-            (percentage, eta) = gen_batch_stats(t_start, t_end, processed, total)
-
-            self._logger.info(f'Albums items batch delete: {percentage}, eta: {eta}')
 
         return info
     
