@@ -1,4 +1,4 @@
-from usync_gphotos.storage import Storage
+from usbackup_gphotos.storage import Storage
 
 __all__ = ['SettingsModel']
 

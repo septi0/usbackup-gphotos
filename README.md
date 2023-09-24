@@ -1,3 +1,3 @@
-# USync-GPhotos
+# UsBackup-GPhotos
 
 No description yet.

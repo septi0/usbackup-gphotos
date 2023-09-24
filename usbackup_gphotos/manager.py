@@ -1,14 +1,14 @@
 import os
 import logging
 from configparser import ConfigParser
-from usync_gphotos.identity import USyncGPhotosIdentity
+from usbackup_gphotos.identity import UsBackupGPhotosIdentity
 
-__all__ = ['USyncGPhotosManager', 'USyncGPhotosConfigError']
+__all__ = ['UsBackupGPhotosManager', 'UsBackupGPhotosConfigError']
 
-class USyncGPhotosConfigError(Exception):
+class UsBackupGPhotosConfigError(Exception):
     pass
 
-class USyncGPhotosManager:
+class UsBackupGPhotosManager:
     def __init__(self, params: dict) -> None:
         self._logger: logging.Logger = self._gen_logger(params.get('log_file', ''), params.get('log_level', 'INFO'))
 
@@ -18,7 +18,7 @@ class USyncGPhotosManager:
             'webserver_port': 8080,
         }
 
-        self._identities: list[USyncGPhotosIdentity] = self._gen_identities(params.get('identities', []), config)
+        self._identities: list[UsBackupGPhotosIdentity] = self._gen_identities(params.get('identities', []), config)
 
     def index(self, options: dict) -> None:
         for identity in self._identities:
@@ -94,9 +94,9 @@ class USyncGPhotosManager:
     def _parse_config(self, config_files: list[str]) -> dict:
         if not config_files:
             config_files = [
-                '/etc/usync-gphotos/config.conf',
-                '/etc/opt/usync-gphotos/config.conf',
-                os.path.expanduser('~/.config/usync-gphotos/config.conf'),
+                '/etc/usbackup-gphotos/config.conf',
+                '/etc/opt/usbackup-gphotos/config.conf',
+                os.path.expanduser('~/.config/usbackup-gphotos/config.conf'),
             ]
 
         config_inst = ConfigParser()
@@ -104,7 +104,7 @@ class USyncGPhotosManager:
 
         # check if any config was found
         if not config_inst.sections():
-            raise USyncGPhotosConfigError("No config found")
+            raise UsBackupGPhotosConfigError("No config found")
 
         config = {}
 
@@ -113,7 +113,7 @@ class USyncGPhotosManager:
 
             # make sure our section has "auth_file" and "work_dir" options
             if not config_inst.has_option(section, 'auth_file') or not config_inst.has_option(section, 'data_dir'):
-                raise USyncGPhotosConfigError(f'Config section "{section}" is missing "auth_file" or "work_dir"')
+                raise UsBackupGPhotosConfigError(f'Config section "{section}" is missing "auth_file" or "work_dir"')
 
             for key, value in config_inst.items(section):
                 section_data[key] = value
@@ -122,13 +122,13 @@ class USyncGPhotosManager:
 
         return config
     
-    def _gen_identities(self, identities_names: list[str], config: dict) -> list[USyncGPhotosIdentity]:
+    def _gen_identities(self, identities_names: list[str], config: dict) -> list[UsBackupGPhotosIdentity]:
         identities_to_create = []
         
         if identities_names:
             for identity_name in identities_names:
                 if not identity_name in config:
-                    raise USyncGPhotosConfigError(f'Identity "{identity_name}" not found in config')
+                    raise UsBackupGPhotosConfigError(f'Identity "{identity_name}" not found in config')
 
                 identities_to_create.append(identity_name)
         else:
@@ -136,7 +136,7 @@ class USyncGPhotosManager:
             identities_to_create = [identity_name for identity_name in config.keys() if identity_name != 'GLOBALS']
 
         if not identities_to_create:
-            raise USyncGPhotosConfigError('No identities found')
+            raise UsBackupGPhotosConfigError('No identities found')
         
         global_config = config.get('GLOBALS', {})
         
@@ -146,7 +146,7 @@ class USyncGPhotosManager:
             identity_config = config[identity_name]
             identity_config = {**global_config, **identity_config}
 
-            identity = USyncGPhotosIdentity(identity_name, identity_config, logger=self._logger)
+            identity = UsBackupGPhotosIdentity(identity_name, identity_config, logger=self._logger)
 
             identities.append(identity)
 

@@ -1,7 +1,7 @@
 import sys
 import argparse
-from usync_gphotos.manager import USyncGPhotosManager, USyncGPhotosConfigError, USyncGPhotosIdentity
-from usync_gphotos.info import __app_name__, __version__, __description__, __author__, __author_email__, __author_url__, __license__
+from usbackup_gphotos.manager import UsBackupGPhotosManager, UsBackupGPhotosConfigError, UsBackupGPhotosIdentity
+from usbackup_gphotos.info import __app_name__, __version__, __description__, __author__, __author_email__, __author_url__, __license__
 
 def main():
     # get args from command line
@@ -48,26 +48,26 @@ def main():
       sys.exit()
 
     try:
-        usync_gphotos = USyncGPhotosManager({
+        usbackup_gphotos = UsBackupGPhotosManager({
             'config_files': args.config_files,
             'identities': args.identities,
             'use_webserver': args.use_webserver,
             'log_file': args.log_file,
             'log_level': args.log_level,
         })
-    except USyncGPhotosConfigError as e:
-        print(f"Config error: {e}\nCheck documentation for more information on how to configure USync-GPhotos identities")
+    except UsBackupGPhotosConfigError as e:
+        print(f"Config error: {e}\nCheck documentation for more information on how to configure {__app_name__} identities")
         sys.exit(2)
 
     if args.command == 'index':
-        usync_gphotos.index({
+        usbackup_gphotos.index({
             'skip_media_items': args.skip_media_items,
             'skip_albums': args.skip_albums,
             'rescan': args.rescan,
             'albums': args.albums,
         })
     elif args.command == 'sync':
-        usync_gphotos.sync({
+        usbackup_gphotos.sync({
             # index options
             'skip_media_items': args.skip_media_items,
             'skip_albums': args.skip_albums,
@@ -78,13 +78,13 @@ def main():
             'concurrency': args.concurrency,
         })
     elif args.command == 'delete':
-        usync_gphotos.delete_obsolete()
+        usbackup_gphotos.delete_obsolete()
     elif args.command == 'auth':
-        usync_gphotos.auth()
+        usbackup_gphotos.auth()
     elif args.command == 'stats':
-        usync_gphotos.stats()
+        usbackup_gphotos.stats()
     elif args.command == 'ignore':
-        usync_gphotos.ignore({
+        usbackup_gphotos.ignore({
             'set': args.set,
             'reset': args.reset,
         })

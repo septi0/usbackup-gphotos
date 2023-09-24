@@ -7,10 +7,10 @@ import shutil
 from datetime import datetime
 from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
-from usync_gphotos.media_items_model import MediaItemsModel
-from usync_gphotos.gphotos_api import GPhotosApi
-from usync_gphotos.action_stats import ActionStats
-from usync_gphotos.utils import transform_fs_safe, gen_batch_stats
+from usbackup_gphotos.media_items_model import MediaItemsModel
+from usbackup_gphotos.gphotos_api import GPhotosApi
+from usbackup_gphotos.action_stats import ActionStats
+from usbackup_gphotos.utils import transform_fs_safe, gen_batch_stats
 
 __all__ = ['MediaItems', 'MediaItemDownloadError']
 
@@ -335,7 +335,7 @@ class MediaItems:
         if media_item_meta['status'] not in ['synced', 'pending_sync', 'ignored']:
             return True
 
-        # TODO: check for mdate changes when it will be available in API
+        # TODO: check mdate (if it will be available in API)
 
         return False
     
@@ -353,7 +353,7 @@ class MediaItems:
             cname=cname,
             mime_type=media_item['mimeType'],
             create_date=create_date,
-            modify_date=create_date, # TODO: set modify date when it will be available in API
+            modify_date=create_date, # TODO: set mdate (if it will be available in API)
             path=path,
             index_date=index_date,
             last_checked=index_date,

@@ -1,21 +1,21 @@
 import os
 import logging
 from datetime import datetime
-from usync_gphotos.gauth import GAuth
-from usync_gphotos.gphotos_api import GPhotosApi
-from usync_gphotos.media_items import MediaItems
-from usync_gphotos.albums import Albums
-from usync_gphotos.storage import Storage
-from usync_gphotos.media_items_model import MediaItemsModel
-from usync_gphotos.albums_model import AlbumsModel
-from usync_gphotos.settings_model import SettingsModel
+from usbackup_gphotos.gauth import GAuth
+from usbackup_gphotos.gphotos_api import GPhotosApi
+from usbackup_gphotos.media_items import MediaItems
+from usbackup_gphotos.albums import Albums
+from usbackup_gphotos.storage import Storage
+from usbackup_gphotos.media_items_model import MediaItemsModel
+from usbackup_gphotos.albums_model import AlbumsModel
+from usbackup_gphotos.settings_model import SettingsModel
 
-__all__ = ['USyncGPhotosIdentity', 'USyncGPhotosIdentityError']
+__all__ = ['UsBackupGPhotosIdentity', 'UsBackupGPhotosIdentityError']
 
-class USyncGPhotosIdentityError(Exception):
+class UsBackupGPhotosIdentityError(Exception):
     pass
 
-class USyncGPhotosIdentity:
+class UsBackupGPhotosIdentity:
     def __init__(self, name: str, config: dict, *, logger: logging.Logger) -> None:
         self._name: str = name
         self._logger: logging.Logger = logger.getChild(self._name)
@@ -35,7 +35,7 @@ class USyncGPhotosIdentity:
     
     def lock(self) -> None:
         if os.path.exists(self._lock_file):
-            raise USyncGPhotosIdentityError(f'Lock file "{self._lock_file}" already exists. Is another instance running?')
+            raise UsBackupGPhotosIdentityError(f'Lock file "{self._lock_file}" already exists. Is another instance running?')
         
         with open(self._lock_file, 'w') as f:
             f.write(str(os.getpid()))
@@ -48,7 +48,7 @@ class USyncGPhotosIdentity:
             pid = f.read()
 
         if pid != str(os.getpid()):
-            raise USyncGPhotosIdentityError(f'Lock file "{self._lock_file}" is not owned by current process') from None
+            raise UsBackupGPhotosIdentityError(f'Lock file "{self._lock_file}" is not owned by current process') from None
         
         os.remove(self._lock_file)
 
@@ -217,7 +217,7 @@ class USyncGPhotosIdentity:
     def _setup(self, config: dict) -> None:
         data_dir = self._gen_data_dir(config.get('data_dir', ''))
         library_dir = os.path.join(data_dir, 'library')
-        storage_file = os.path.join(data_dir, 'usync_gphotos.db')
+        storage_file = os.path.join(data_dir, 'usbackup_gphotos.db')
         auth_file = config.get('auth_file', '')
         auth_scopes = [
             'https://www.googleapis.com/auth/photoslibrary.readonly',
@@ -244,7 +244,7 @@ class USyncGPhotosIdentity:
 
         self._settings_model = settings_model
         self._settings = settings
-        self._lock_file = os.path.join(data_dir, 'usync_gphotos.lock')
+        self._lock_file = os.path.join(data_dir, 'usbackup_gphotos.lock')
 
         self._gauth = gauth
         self._media_items = MediaItems(library_dir, model=mi_model, google_api=google_api, logger=self._logger)
@@ -254,7 +254,7 @@ class USyncGPhotosIdentity:
         data_dir = os.path.realpath(data_dir)
 
         if not data_dir:
-            raise USyncGPhotosIdentityError('Data dir not provided')
+            raise UsBackupGPhotosIdentityError('Data dir not provided')
 
         if not os.path.exists(data_dir):
             self._logger.info(f'Creating destination directory "{data_dir}"')

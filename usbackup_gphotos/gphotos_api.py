@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
-from usync_gphotos.gauth import GAuth
+from usbackup_gphotos.gauth import GAuth
 
 __all__ = ['GPhotosApi', 'GPhotosApiException']
 

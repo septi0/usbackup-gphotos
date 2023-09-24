@@ -1,9 +1,9 @@
 from setuptools import setup
 
-# import usync_gphotos.info without importing the package
+# import usbackup_gphotos.info without importing the package
 info = {}
 
-with open("usync_gphotos/info.py") as fp:
+with open("usbackup_gphotos/info.py") as fp:
     exec(fp.read(), info)
 
 with open("README.md", "r") as f:
@@ -25,7 +25,7 @@ setup(
     python_requires='>=3.9',
     install_requires=requirements,
     packages=[
-        'usync_gphotos',
+        'usbackup_gphotos',
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
@@ -37,7 +37,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'usync-gphotos = usync_gphotos:main',
+            'usbackup-gphotos = usbackup_gphotos:main',
         ],
     },
     options={}

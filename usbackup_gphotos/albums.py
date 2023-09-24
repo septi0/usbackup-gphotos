@@ -2,11 +2,11 @@ import os
 import logging
 import asyncio
 from datetime import datetime
-from usync_gphotos.albums_model import AlbumsModel
-from usync_gphotos.media_items import MediaItems
-from usync_gphotos.gphotos_api import GPhotosApi
-from usync_gphotos.action_stats import ActionStats
-from usync_gphotos.utils import transform_fs_safe, gen_batch_stats
+from usbackup_gphotos.albums_model import AlbumsModel
+from usbackup_gphotos.media_items import MediaItems
+from usbackup_gphotos.gphotos_api import GPhotosApi
+from usbackup_gphotos.action_stats import ActionStats
+from usbackup_gphotos.utils import transform_fs_safe, gen_batch_stats
 
 __all__ = ['Albums']
 
@@ -26,14 +26,16 @@ class Albums:
     def dest_path(self) -> str:
         return self._dest_path
 
-    # Note! rescan not used for now. Due to the limitations of the API, we can't get albums sorted by date
     def index_albums(self, *, last_index: str = None, rescan: bool = False, filter_albums: list = []) -> ActionStats:
         page_token = None
         limit = self._album_list_limit
         check_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         info = ActionStats(indexed=0, skipped=0, failed=0)
 
-        # TODO: list albums by date if it will be available in API
+        # TODO: list albums by mdate greater than last_index (if it will be available in API)
+
+        # always rescan for now
+        rescan = True
 
         while True:
             to_index = self._google_api.albums_list(page_token=page_token, page_size=limit)
@@ -61,7 +63,7 @@ class Albums:
             if not page_token:
                 break
 
-        if not filter_albums:
+        if rescan and not filter_albums:
             # mark all albums older than check_date as stale
             stale_cnt = self._model.set_albums_meta_stale(last_checked=check_date)
             self._propagate_stale_albums()
@@ -341,7 +343,7 @@ class Albums:
         if not synced or not same_size:
             return True
         
-        # TODO: check for mdate changes when it will be available in API
+        # TODO: check mdate (if it will be available in API)
         
         return False
 
