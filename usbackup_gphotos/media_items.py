@@ -142,10 +142,10 @@ class MediaItems:
     def delete_obsolete_items(self) -> ActionStats:
         info = ActionStats(deleted=0, failed=0)
 
-        db_info = self._delete_obsolete_items_db()
+        db_info = self._delete_obsolete_items_by_db()
         info.increment(**dict(db_info))
 
-        fs_info = self._delete_obsolete_items_fs()
+        fs_info = self._delete_obsolete_items_by_fs()
         info.increment(**dict(fs_info))
 
         return info
@@ -496,7 +496,7 @@ class MediaItems:
 
         return info
     
-    def _delete_obsolete_items_fs(self) -> ActionStats:
+    def _delete_obsolete_items_by_fs(self) -> ActionStats:
         items_path = os.path.join(self._dest_path, self._items_dir)
         info = ActionStats(deleted=0, failed=0)
 
