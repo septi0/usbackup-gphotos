@@ -81,7 +81,7 @@ class Storage:
         field_safe = field.replace('.', '_')
         placeholders[field_safe] = value
 
-        return f'{field_safe} {operator} :{field_safe}'
+        return f'{field} {operator} :{field_safe}'
     
     def gen_update_fields(self, fields: dict, data: dict) -> str:
         if not fields:
