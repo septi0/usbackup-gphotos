@@ -29,6 +29,7 @@ def main():
     sync_parser.add_argument('--rescan', dest='rescan', help='Rescan all media items', action='store_true', default=False)
     sync_parser.add_argument('--album', dest='albums', action='append', help='Album name(s)')
     sync_parser.add_argument('--concurrency', dest='concurrency', help='Concurrency', type=int, default=10)
+    sync_parser.add_argument('--albums-sync-mode', dest='albums_sync_mode', help='Albums sync mode', choices=['symlink', 'hardlink', 'copy'], default='symlink')
 
     delete_parser = subparsers.add_parser('delete', help='Delete obsolete media items')
 
@@ -76,6 +77,7 @@ def main():
             # sync options
             'skip_index': args.skip_index,
             'concurrency': args.concurrency,
+            'albums_sync_mode': args.albums_sync_mode,
         })
     elif args.command == 'delete':
         usbackup_gphotos.delete_obsolete()

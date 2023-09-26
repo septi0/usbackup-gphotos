@@ -465,8 +465,9 @@ class MediaItems:
 
         return 'synced'
 
-    def _delete_obsolete_items_db(self) -> ActionStats:
+    def _delete_obsolete_items_by_db(self) -> ActionStats:
         limit = 100
+        offset = 0
         total = self._model.get_media_items_meta_cnt(status='stale')
         info = ActionStats(deleted=0, failed=0)
 
@@ -474,7 +475,7 @@ class MediaItems:
             return info
 
         while True:
-            to_delete = self._model.search_media_items_meta(limit=limit, status='stale')
+            to_delete = self._model.search_media_items_meta(limit=limit, offset=offset, status='stale')
 
             if not to_delete:
                 break
@@ -485,6 +486,8 @@ class MediaItems:
                     self._model.delete_media_item_meta(media_item_meta['media_id'])
                 except Exception as e:
                     self._logger.error(f'Deletion for media item "{media_item_meta["name"]}" failed. {e}')
+
+                    offset += 1
                     info.increment(failed=1)
                 else:
                     info.increment(deleted=1)

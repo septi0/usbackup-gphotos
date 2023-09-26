@@ -117,7 +117,7 @@ class MediaItemsModel:
         if not media_id:
             raise ValueError('Missing media_id')
         
-        allowed_keys = ['status', 'index_date', 'last_checked']
+        allowed_keys = ['index_date', 'last_checked', 'status']
 
         for key in kwargs.keys():
             if key not in allowed_keys:
@@ -227,17 +227,18 @@ class MediaItemsModel:
     def _ensure_table(self):
         query = (
             "CREATE TABLE IF NOT EXISTS media_items (",
-            "   media_id INTEGER PRIMARY KEY AUTOINCREMENT,",
-            "   remote_id TEXT UNIQUE,",
-            "   name TEXT,",
-            "   cname TEXT,",
-            "   mime_type TEXT,",
-            "   create_date DATETIME,",
-            "   modify_date DATETIME,",
-            "   path TEXT,",
+            "   media_id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,",
+            "   remote_id TEXT NOT NULL UNIQUE,",
+            "   name TEXT NOT NULL,",
+            "   cname TEXT NOT NULL,",
+            "   mime_type TEXT NOT NULL,",
+            "   create_date DATETIME NOT NULL,",
+            "   modify_date DATETIME NOT NULL,",
+            "   path TEXT NOT NULL,",
             "   index_date DATETIME,",
             "   last_checked DATETIME,",
-            "   status TEXT",
+            "   status TEXT NOT NULL,",
+            "   CHECK (status IN ('" + "','".join(self._item_statuses) + "'))",
             ")",
         )
         

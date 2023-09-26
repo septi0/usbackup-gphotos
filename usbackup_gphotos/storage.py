@@ -44,24 +44,44 @@ class Storage:
     def commit(self) -> None:
         self._conn.commit()
 
-    def gen_in_condition(self, field: str, values, data: dict, *, negate: bool = False) -> str:
-        if not field or not values:
+    def gen_in_condition(self, field: str, data, placeholders: dict) -> str:
+        if not field or not data:
             return ''
+        
+        if isinstance(data, tuple):
+            operator = 'NOT IN' if data[0] in ['not', '!='] else 'IN'
+            values = data[1]
+        else:
+            operator = 'IN'
+            values = data
         
         if isinstance(values, str):
             values = [values]
 
         in_values = []
+        field_safe = field.replace('.', '_')
 
         for i, s in enumerate(values):
-            field_safe = field.replace('.', '_')
             in_values.append(f':{field_safe}_{i}')
-            data[f'{field_safe}_{i}'] = s
+            placeholders[f'{field_safe}_{i}'] = s
 
-        if negate:
-            return f'{field} NOT IN ({", ".join(in_values)})'
+        return f'{field} {operator} ({", ".join(in_values)})'
+    
+    def gen_eq_condition(self, field: str, data, placeholders: dict) -> str:
+        if not field or not data:
+            return ''
+
+        if isinstance(data, tuple):
+            operator = '!=' if data[0] in ['not', '!='] else '='
+            value = data[1]
         else:
-            return f'{field} IN ({", ".join(in_values)})'
+            operator = '='
+            value = data
+
+        field_safe = field.replace('.', '_')
+        placeholders[field_safe] = value
+
+        return f'{field_safe} {operator} :{field_safe}'
     
     def gen_update_fields(self, fields: dict, data: dict) -> str:
         if not fields:

@@ -56,45 +56,17 @@ class UsBackupGPhotosIdentity:
         self._gauth.ensure_valid_auth()
 
         if not options.get('skip_media_items'):
-            # index media items ########################################
-            self._logger.info(f'* Indexing media items')
-
-            mi_sdate = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-            processed = self._media_items.index_items(
+            self._index_media_items(
                 last_index=self._settings.get('media_items_last_index', None),
                 rescan=options.get('rescan', False)
             )
 
-            if bool(processed):
-                if processed['indexed'] and not processed['failed']:
-                    self._update_aseting('media_items_last_index', mi_sdate)
-
-                self._logger.info(f'Processed {processed.total} media items ({processed})')
-            else:
-                self._logger.info(f'No media items indexed')
-            ############################################################
-
         if not options.get('skip_albums'):
-            # index albums #############################################
-            self._logger.info(f'* Indexing albums')
-
-            a_sdate = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-            processed = self._albums.index_albums(
+            self._index_albums(
                 last_index=self._settings.get('albums_last_index', None),
                 rescan=options.get('rescan', False),
                 filter_albums=options.get('albums', []),
             )
-
-            if bool(processed):
-                if processed['indexed'] and not processed['failed']:
-                    self._update_aseting('albums_last_index', a_sdate)
-
-                self._logger.info(f'Processed {processed.total} albums ({processed})')
-            else:
-                self._logger.info(f'No albums indexed')
-            ############################################################
 
     def sync(self, options: dict) -> None:
         self._gauth.ensure_valid_auth()
@@ -107,79 +79,23 @@ class UsBackupGPhotosIdentity:
                 'albums': options.get('albums', []),
             })
 
-        # scan synced media items on filesystem ####################
-        processed = self._media_items.scan_synced_items_fs()
+        self._scan_synced()
 
-        if bool(processed):
-            self._logger.info(f'Fixed {processed["fixed"]} missing media items from filesystem')
-        ############################################################
-
-        # scan synced albums items on filesystem ###################
-        processed = self._albums.scan_synced_albums_items_fs()
-
-        if bool(processed):
-            self._logger.info(f'Fixed {processed["fixed"]} missing albums items from filesystem')
-        ############################################################
-
-        # sync media items #########################################
-        self._logger.info(f'* Syncing media items')
-        processed = self._media_items.sync_items(
+        self._sync_media_items(
             concurrency=options.get('concurrency', 20),
         )
 
-        if bool(processed):
-            self._logger.info(f'Processed {processed.total} media items ({processed})')
-        else:
-            self._logger.info(f'No media items synced')
-        ############################################################
-
-        # sync albums ##############################################
-        self._logger.info(f'* Syncing albums items')
-
-        processed = self._albums.sync_albums_items(
+        self._sync_albums(
             concurrency=options.get('concurrency', 20),
+            sync_mode=options.get('albums_sync_mode', 'sync'),
         )
-
-        if bool(processed):
-            self._logger.info(f'Processed {processed.total} albums items ({processed})')
-        else:
-            self._logger.info(f'No albums synced')
-        ############################################################
 
     def delete_obsolete(self) -> None:
-        # delete obsolete albums items #############################
-        self._logger.info(f'* Deleting obsolete albums items')
-        processed = self._albums.delete_obsolete_albums_items()
-
-        if bool(processed):
-            self._logger.info(f'Processed {processed.total} albums items ({processed})')
-        else:
-            self._logger.info(f'No obsolete albums items deleted')
-        ############################################################
-
-        # delete obsolete albums ###################################
-        self._logger.info(f'* Deleting obsolete albums')
-        processed = self._albums.delete_obsolete_albums()
-
-        if bool(processed):
-            self._logger.info(f'Processed {processed.total} albums ({processed})')
-        else:
-            self._logger.info(f'No obsolete albums deleted')
-        ############################################################
-
-        # delete obsolete media items ##############################
-        self._logger.info(f'* Deleting obsolete media items')
-        processed = self._media_items.delete_obsolete_items()
-
-        if bool(processed):
-            self._logger.info(f'Processed {processed.total} media items ({processed})')
-        else:
-            self._logger.info(f'No obsolete media items deleted')
-        ############################################################
+        self._delete_obsolete_media_items()
+        self._delete_obsolete_albums()
 
     def auth(self) -> None:
         self._logger.info(f'* Authenticating')
-
         self._gauth.issue_new_token()
 
     def stats(self) -> dict:
@@ -193,26 +109,10 @@ class UsBackupGPhotosIdentity:
 
     def ignore(self, options: dict) -> None:
         if options.get('set'):
-            # ignore media items #######################################
-            self._logger.info(f'* Ignoring media items')
-            processed = self._media_items.ignore_items(options.get('set'))
-
-            if bool(processed):
-                self._logger.info(f'Processed {processed.total} media items ({processed})')
-            else:
-                self._logger.info(f'No media items ignored')
-            ############################################################
+            self._ignore_items(options.get('set', []))
 
         if options.get('reset'):
-            # reset ignored media items ################################
-            self._logger.info(f'* Resetting ignored media items')
-            processed = self._media_items.reset_ignored_items()
-
-            if bool(processed):
-                self._logger.info(f'Processed {processed.total} media items ({processed})')
-            else:
-                self._logger.info(f'No media items reset')
-            ############################################################
+            self._reset_ignored_items()
 
     def _setup(self, config: dict) -> None:
         data_dir = self._gen_data_dir(config.get('data_dir', ''))
@@ -266,16 +166,122 @@ class UsBackupGPhotosIdentity:
             
         return data_dir
     
-    def _get_settings(self) -> dict:
-        settings = self._settings_t.select().fetchall()
-
-        if not settings:
-            return {}
-        
-        return {s['key']: s['value'] for s in settings}
-    
     def _update_aseting(self, key: str, value: str) -> int:
         return self._settings_model.update_aseting(key, value)
     
     def _update_token_hash(self, token_hash: str) -> None:
         self._update_aseting('token_hash', token_hash)
+
+    def _index_media_items(self, *args, **kwargs) -> None:
+        self._logger.info(f'* Indexing media items')
+
+        mi_sdate = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        processed = self._media_items.index_items(*args, **kwargs)
+
+        if bool(processed):
+            if processed['indexed'] and not processed['failed']:
+                self._update_aseting('media_items_last_index', mi_sdate)
+
+            self._logger.info(
+                f'Processed {processed.total} media items ({processed})')
+        else:
+            self._logger.info(f'No media items indexed')
+
+    def _index_albums(self, *args, **kwargs) -> None:
+        self._logger.info(f'* Indexing albums')
+
+        a_sdate = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        processed = self._albums.index_albums(*args, **kwargs)
+
+        if bool(processed):
+            if processed['indexed'] and not processed['failed']:
+                self._update_aseting('albums_last_index', a_sdate)
+
+            self._logger.info(f'Processed {processed.total} albums ({processed})')
+        else:
+            self._logger.info(f'No albums indexed')
+
+    def _scan_synced(self) -> None:
+        processed = self._media_items.scan_synced_items_fs()
+
+        if bool(processed):
+            self._logger.info(f'Fixed {processed["fixed"]} missing media items from filesystem')
+
+        processed = self._albums.scan_synced_albums_items_fs()
+
+        if bool(processed):
+            self._logger.info(f'Fixed {processed["fixed"]} missing albums items from filesystem')
+
+    def _sync_media_items(self, *args, **kwargs) -> None:
+        self._logger.info(f'* Syncing media items')
+        processed = self._media_items.sync_items(*args, **kwargs)
+
+        if bool(processed):
+            self._logger.info(f'Processed {processed.total} media items ({processed})')
+        else:
+            self._logger.info(f'No media items synced')
+
+    def _sync_albums(self, *args, **kwargs) -> None:
+        self._logger.info(f'* Syncing albums')
+
+        processed = self._albums.sync_albums()
+
+        if bool(processed):
+            self._logger.info(f'Processed {processed.total} albums ({processed})')
+        else:
+            self._logger.info(f'No albums synced')
+
+        self._logger.info(f'* Syncing albums items')
+
+        processed = self._albums.sync_albums_items(*args, **kwargs)
+
+        if bool(processed):
+            self._logger.info(f'Processed {processed.total} albums items ({processed})')
+        else:
+            self._logger.info(f'No albums items synced')
+
+    def _delete_obsolete_media_items(self) -> None:
+        self._logger.info(f'* Deleting obsolete albums items')
+        processed = self._albums.delete_obsolete_albums_items()
+
+        if bool(processed):
+            self._logger.info(f'Processed {processed.total} albums items ({processed})')
+        else:
+            self._logger.info(f'No obsolete albums items deleted')
+
+    def _delete_obsolete_albums(self) -> None:
+        self._logger.info(f'* Deleting obsolete albums')
+        processed = self._albums.delete_obsolete_albums()
+
+        if bool(processed):
+            self._logger.info(f'Processed {processed.total} albums ({processed})')
+        else:
+            self._logger.info(f'No obsolete albums deleted')
+
+        self._logger.info(f'* Deleting obsolete media items')
+        processed = self._media_items.delete_obsolete_items()
+
+        if bool(processed):
+            self._logger.info(f'Processed {processed.total} media items ({processed})')
+        else:
+            self._logger.info(f'No obsolete media items deleted')
+
+    def _ignore_items(self, *args, **kwargs) -> None:
+        self._logger.info(f'* Ignoring media items')
+        processed = self._media_items.ignore_items(*args, **kwargs)
+
+        if bool(processed):
+            self._logger.info(f'Processed {processed.total} media items ({processed})')
+        else:
+            self._logger.info(f'No media items ignored')
+
+    def _reset_ignored_items(self) -> None:
+        self._logger.info(f'* Resetting ignored media items')
+        processed = self._media_items.reset_ignored_items()
+
+        if bool(processed):
+            self._logger.info(f'Processed {processed.total} media items ({processed})')
+        else:
+            self._logger.info(f'No media items reset')

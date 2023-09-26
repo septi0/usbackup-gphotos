@@ -1,6 +1,7 @@
 import os
 import logging
 import asyncio
+import shutil
 from datetime import datetime
 from usbackup_gphotos.albums_model import AlbumsModel
 from usbackup_gphotos.media_items import MediaItems
@@ -23,6 +24,7 @@ class Albums:
         self._album_items_list_limit: int = 100
 
         self._albums_dir = 'albums'
+        self._sync_modes = ['symlink', 'hardlink', 'copy']
 
     @property
     def dest_path(self) -> str:
@@ -85,7 +87,7 @@ class Albums:
         # check if album was renamed
         if album_meta and album_meta['name'] != album['title']:
             self._logger.info(f'Queueing album "{album_meta["name"]}" for rename to "{album["title"]}"')
-            # TODO: queue album for rename
+            self._model.update_album_meta(album_meta['album_id'], rename=album['title'])
 
         if not self._index_needed(album_meta, album):
             last_checked = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -142,9 +144,19 @@ class Albums:
                 break
 
         return info
+    
+    def sync_albums(self) -> ActionStats:
+        # rename albums
+        self._rename_albums()
 
-    def sync_albums_items(self, *, concurrency: int = 1, use_symlinks: bool = True) -> ActionStats:
-        return asyncio.run(self._sync_albums_items(concurrency=concurrency, use_symlinks=use_symlinks))
+        return ActionStats()
+
+        # what else do you want to sync to albums?
+        # they're just albums, they don't do much
+        # albums items are synced with ... sync_albums_items
+
+    def sync_albums_items(self, *, concurrency: int = 1, sync_mode: str = 'symlink') -> ActionStats:
+        return asyncio.run(self._sync_albums_items(concurrency=concurrency, sync_mode=sync_mode))
     
     def delete_obsolete_albums(self) -> ActionStats:
         limit = 100
@@ -162,6 +174,9 @@ class Albums:
                 break
 
             for album_meta in to_delete:
+                if self._model.get_albums_items_meta_cnt(album_id=album_meta['album_id']):
+                    raise ValueError(f'Deletion for album "{album_meta["name"]}" failed. Album is not empty. Make sure to delete album items first')
+                
                 try:                    
                     self._delete_album_dir(album_meta)
                     self._model.delete_album_meta(album_meta['album_id'])
@@ -180,10 +195,10 @@ class Albums:
     def delete_obsolete_albums_items(self) -> ActionStats:
         info = ActionStats(deleted=0, failed=0)
 
-        db_info = self._delete_obsolete_albums_items_db()
+        db_info = self._delete_obsolete_albums_items_by_db()
         info.increment(**dict(db_info))
 
-        fs_info = self._delete_obsolete_albums_items_fs()
+        fs_info = self._delete_obsolete_albums_items_by_fs()
         info.increment(**dict(fs_info))
 
         return info
@@ -214,14 +229,16 @@ class Albums:
 
             for album_item_meta in to_check:
                 if not album_item_meta['item_cname'] or not album_item_meta['album_cname']:
-                    self._logger.warning(f'Missing meta for album item #{album_item_meta["album_item_id"]}')
-                    continue
+                    # if item_cname or album_cname is missing, most likely we have an item that exists in an album, but missing in media_items
+                    # we skip for now until we have a better way to handle this
+                    # TODO: handle missing media_items
+                    self._logger.warning(f'Broken meta for album item #{album_item_meta["album_item_id"]}')
+                else:
+                    if not self._album_item_exists_fs(album_item_meta):
+                        self._logger.debug(f'Media item "{album_item_meta["item_name"]}" not found on filesystem. Setting status to pending_sync')
+                        self._model.update_album_item_meta(album_item_meta['album_item_id'], status='pending_sync')
 
-                if not self._album_item_exists_fs(album_item_meta):
-                    self._logger.debug(f'Media item "{album_item_meta["item_name"]}" not found on filesystem. Setting status to pending_sync')
-                    self._model.update_album_item_meta(album_item_meta['album_item_id'], status='pending_sync')
-
-                    info.increment(fixed=1)
+                        info.increment(fixed=1)
 
             self._model.commit()
 
@@ -259,8 +276,7 @@ class Albums:
 
     def _delete_album_item_file(self, album_item_meta: dict) -> None:
         if not album_item_meta['item_cname'] or not album_item_meta['album_cname']:
-            self._logger.debug(f'Missing meta for album item #{album_item_meta["album_item_id"]}')
-            return
+            raise ValueError(f'Missing meta for album item #{album_item_meta["album_item_id"]}')
         
         dest_file = os.path.join(
             self._dest_path,
@@ -277,6 +293,9 @@ class Albums:
             self._logger.debug(f'Deletion for album item "{album_item_meta["item_name"]}" ("{album_item_meta["album_name"]}") skipped. File not found')
 
     def _album_item_exists_fs(self, album_item_meta: dict) -> bool:
+        if not album_item_meta['item_cname'] or not album_item_meta['album_cname']:
+            raise ValueError(f'Missing meta for album item #{album_item_meta["album_item_id"]}')
+        
         dest_file = os.path.join(
             self._dest_path,
             album_item_meta['album_path'],
@@ -309,7 +328,7 @@ class Albums:
         if not album_meta:
             return True
         
-        album_items_cnt = self._model.get_albums_items_meta_cnt(album_id=album_meta['album_id'], status_not=['stale'])
+        album_items_cnt = self._model.get_albums_items_meta_cnt(album_id=album_meta['album_id'], status=('not', ['stale']))
         
         synced = album_meta['status'] in ['indexed']
         same_size = int(album_meta['size']) == int(album['mediaItemsCount']) == album_items_cnt
@@ -354,10 +373,10 @@ class Albums:
             status='pending_sync',
         )
 
-    async def _sync_albums_items(self, *, concurrency: int = 1, use_symlinks: bool = True) -> ActionStats:
+    async def _sync_albums_items(self, *, concurrency: int = 1, sync_mode: str = 'symlink') -> ActionStats:
         limit = 100
         offset = 0
-        opts = {'use_symlinks': use_symlinks,}
+        opts = {'sync_mode': sync_mode, }
         total = self._model.get_albums_items_meta_cnt(status=['pending_sync', 'sync_error'])
         info = ActionStats(synced=0, skipped=0, failed=0)
 
@@ -424,12 +443,15 @@ class Albums:
 
         return info
 
-    async def _sync_album_item(self, album_item_meta: dict, *, use_symlinks: bool = True) -> str:
+    async def _sync_album_item(self, album_item_meta: dict, *, sync_mode: str = 'symlink') -> str:
         if not album_item_meta['item_cname'] or not album_item_meta['album_cname']:
             raise ValueError(f'Missing meta for album item #{album_item_meta["album_item_id"]}')
         
         if album_item_meta['item_status'] not in ['synced', 'ignored']:
             raise ValueError('media item is not synced')
+        
+        if sync_mode not in self._sync_modes:
+            raise ValueError(f'Invalid sync mode "{sync_mode}"')
 
         if album_item_meta['item_status'] == 'ignored':
             self._logger.debug(f'Sync for album item "{album_item_meta["item_name"]}" ("{album_item_meta["album_name"]}") skipped. Media item is ignored')
@@ -452,18 +474,22 @@ class Albums:
         if not os.path.isdir(dest_path):
             os.makedirs(dest_path)
 
-        if use_symlinks:
+        if sync_mode == 'symlink':
             src_file_relative = os.path.relpath(src_file, dest_path)
 
             # create symbolic link
             os.symlink(src_file_relative, dest_file)
-        else:
+        elif sync_mode == 'hardlink':
             # use hard links
             os.link(src_file, dest_file)
+        elif sync_mode == 'copy':
+            # copy file
+            # use copy2 to preserve file metadata
+            shutil.copy2(src_file, dest_file)
 
         return 'synced'
 
-    def _delete_obsolete_albums_items_db(self) -> ActionStats:
+    def _delete_obsolete_albums_items_by_db(self) -> ActionStats:
         limit = 100
         offset = 0
         total = self._model.get_albums_items_meta_cnt(status='stale')
@@ -480,7 +506,13 @@ class Albums:
 
             for album_item_meta in to_delete:
                 try:
-                    self._delete_album_item_file(album_item_meta)
+                    if not album_item_meta['item_cname'] or not album_item_meta['album_cname']:
+                        # if item_cname or album_cname is missing, most likely we have an item that exists in an album, but missing in media_items
+                        # we skip for now until we have a better way to handle this
+                        # TODO: handle missing media_items
+                        self._logger.warning(f'Broken meta for album item #{album_item_meta["album_item_id"]}')
+                    else:
+                        self._delete_album_item_file(album_item_meta)
                     self._model.delete_album_item_meta(album_item_meta['album_item_id'])
                 except Exception as e:
                     self._logger.error(f'Deletion for album item "{album_item_meta["item_name"]}" ("{album_item_meta["album_name"]}") failed. Reason: {e}')
@@ -494,7 +526,7 @@ class Albums:
 
         return info
     
-    def _delete_obsolete_albums_items_fs(self) -> ActionStats:
+    def _delete_obsolete_albums_items_by_fs(self) -> ActionStats:
         albums_items_path = os.path.join(self._dest_path, self._albums_dir)
         info = ActionStats(deleted=0, failed=0)
 
@@ -518,3 +550,46 @@ class Albums:
                         info.increment(deleted=1)
 
         return info
+
+    def _rename_albums(self) -> ActionStats:
+        limit = 100
+        offset = 0
+        total = self._model.get_albums_meta_cnt(rename=('not', ''))
+        info = ActionStats(renamed=0, failed=0)
+
+        if not total:
+            return info
+
+        while True:
+            to_rename = self._model.search_albums_meta(limit=limit, offset=offset, rename=('not', ''))
+
+            if not to_rename:
+                break
+
+            for album_meta in to_rename:
+                new_name = album_meta['rename']
+                new_cname = self._get_canonicalized_name(new_name, album_meta['path'])
+
+                try:
+                    self._rename_album_fs(album_meta, new_name, new_cname)
+                    self._model.update_album_meta(album_meta['album_id'], name=new_name, cname=new_cname, rename='')
+                except Exception as e:
+                    self._logger.error(f'Rename for album "{album_meta["name"]}" failed. Reason: {e}')
+
+                    offset += 1
+                    info.increment(failed=1)
+                else:
+                    info.increment(renamed=1)
+
+            self._model.commit()
+
+        return total
+    
+    def _rename_album_fs(self, album_meta: dict, new_name: str, new_cname: str) -> None:
+        old_path = os.path.join(self._dest_path, album_meta['path'], album_meta['cname'])
+        new_path = os.path.join(self._dest_path, album_meta['path'], new_cname)
+
+        self._logger.info(f'Renaming album "{album_meta["name"]}" to "{new_name}"')
+
+        if os.path.isdir(old_path):
+            os.rename(old_path, new_path)

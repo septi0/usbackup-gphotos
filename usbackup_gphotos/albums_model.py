@@ -24,11 +24,9 @@ class AlbumsModel:
         where = ['1=1']
 
         if album_id:
-            where.append('album_id=:album_id')
-            placeholders['album_id'] = album_id
+            where.append(self._storage.gen_eq_condition('album_id', album_id, placeholders))
         elif remote_id:
-            where.append('remote_id=:remote_id')
-            placeholders['remote_id'] = remote_id
+            where.append(self._storage.gen_eq_condition('remote_id', remote_id, placeholders))
 
         query = (
             "SELECT *",
@@ -70,12 +68,15 @@ class AlbumsModel:
 
             return dict(row)
         
-    def get_albums_meta_cnt(self, *, status = None) -> int:
+    def get_albums_meta_cnt(self, *, status = None, rename = None) -> int:
         placeholders = {}
         where = ['1=1']
 
         if status:
             where.append(self._storage.gen_in_condition('status', status, placeholders))
+
+        if rename:
+            where.append(self._storage.gen_eq_condition('rename', rename, placeholders))
 
         query = (
             "SELECT COUNT(album_id) AS cnt",
@@ -91,19 +92,15 @@ class AlbumsModel:
 
             return row['cnt']
 
-    def get_albums_items_meta_cnt(self, *, status=None, status_not=None, album_id: int = None) -> int:
+    def get_albums_items_meta_cnt(self, *, status = None, album_id = None) -> int:
         placeholders = {}
         where = ['1=1']
 
         if status:
             where.append(self._storage.gen_in_condition('status', status, placeholders))
 
-        if status_not:
-            where.append(self._storage.gen_in_condition('status', status_not, placeholders, negate=True))
-
         if album_id:
-            where.append('album_id=:album_id')
-            placeholders['album_id'] = album_id
+            where.append(self._storage.gen_eq_condition('album_id', album_id, placeholders))
         
         query = (
             "SELECT COUNT(album_id) AS cnt",
@@ -151,20 +148,21 @@ class AlbumsModel:
 
             return {r['status']: r['cnt'] for r in rows}
         
-    def search_albums_meta(self, *, limit: int = 100, offset: int = 0, cname: str = None, path: str = None, status = None) -> list:
+    def search_albums_meta(self, *, limit: int = 100, offset: int = 0, cname = None, path = None, status = None, rename = None) -> list:
         placeholders = {}
         where = ['1=1']
 
         if cname:
-            where.append('cname=:cname')
-            placeholders['cname'] = cname
+            where.append(self._storage.gen_eq_condition('cname', cname, placeholders))
 
         if path:
-            where.append('path=:path')
-            placeholders['path'] = path
+            where.append(self._storage.gen_eq_condition('path', path, placeholders))
 
         if status:
             where.append(self._storage.gen_in_condition('status', status, placeholders))
+
+        if rename:
+            where.append(self._storage.gen_eq_condition('rename', rename, placeholders))
 
         query = (
             "SELECT *",
@@ -185,7 +183,7 @@ class AlbumsModel:
 
             return [dict(r) for r in rows]
         
-    def search_albums_items_meta(self, *, limit: int = 100, offset: int = 0, status=None, album_cname: str = None, item_cname: str = None) -> list:
+    def search_albums_items_meta(self, *, limit: int = 100, offset: int = 0, status = None, album_cname = None, item_cname = None) -> list:
         placeholders = {}
         where = ['1=1']
 
@@ -193,12 +191,10 @@ class AlbumsModel:
             where.append(self._storage.gen_in_condition('ai.status', status, placeholders))
 
         if album_cname:
-            where.append('a.cname=:album_cname')
-            placeholders['album_cname'] = album_cname
+            where.append(self._storage.gen_eq_condition('a.cname', album_cname, placeholders))
 
         if item_cname:
-            where.append('mi.cname=:item_cname')
-            placeholders['item_cname'] = item_cname
+            where.append(self._storage.gen_eq_condition('mi.cname', item_cname, placeholders))
 
         query = (
             f"SELECT ai.*, {self._album_item_fields}",
@@ -225,7 +221,7 @@ class AlbumsModel:
         if not album_id:
             raise ValueError('Missing album_id')
         
-        allowed_keys = ['name', 'cname', 'size', 'cover_photo_id', 'status', 'index_date', 'last_checked']
+        allowed_keys = ['name', 'cname', 'size', 'cover_photo_id', 'index_date', 'last_checked', 'status', 'rename']
 
         for key in kwargs.keys():
             if key not in allowed_keys:
@@ -305,8 +301,7 @@ class AlbumsModel:
         where = ['1=1']
 
         if album_id:
-            where.append('album_id=:album_id')
-            placeholders['album_id'] = album_id
+            where.append(self._storage.gen_eq_condition('album_id', album_id, placeholders))
 
         query = (
             "UPDATE albums_items",
@@ -363,7 +358,7 @@ class AlbumsModel:
             path: str,
             index_date: str,
             last_checked: str,
-            status: str = None,
+            status: str = None
         ) -> int:
         placeholders = {}
 
@@ -411,16 +406,18 @@ class AlbumsModel:
         # create albums table if not exists
         query = (
             "CREATE TABLE IF NOT EXISTS albums (",
-            "   album_id INTEGER PRIMARY KEY AUTOINCREMENT,",
+            "   album_id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,",
             "   remote_id TEXT NOT NULL UNIQUE,",
-            "   name TEXT,",
-            "   cname TEXT,",
+            "   name TEXT NOT NULL,",
+            "   cname TEXT NOT NULL,",
             "   size INTEGER,",
             "   cover_photo_id TEXT,",
-            "   path TEXT,",
+            "   path TEXT NOT NULL,",
             "   index_date DATETIME,",
             "   last_checked DATETIME,",
-            "   status TEXT",
+            "   status TEXT NOT NULL,",
+            "   rename TEXT,",
+            "   CHECK (status IN ('" + "', '".join(self._album_statuses) + "'))",
             ")"
         )
 
@@ -430,11 +427,12 @@ class AlbumsModel:
         # create albums_items table if not exists
         query = (
             "CREATE TABLE IF NOT EXISTS albums_items (",
-            "   album_item_id INTEGER PRIMARY KEY AUTOINCREMENT,",
+            "   album_item_id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,",
             "   album_id INTEGER NOT NULL,",
             "   media_id INTEGER NOT NULL,",
-            "   status TEXT,",
+            "   status TEXT NOT NULL,",
             "   UNIQUE (album_id, media_id)",
+            "   CHECK (status IN ('" + "', '".join(self._item_statuses) + "'))",
             ")",
         )
 
