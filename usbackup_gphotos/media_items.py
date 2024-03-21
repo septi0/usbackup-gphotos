@@ -429,9 +429,11 @@ class MediaItems:
 
         # if file already exists, remove it if mtime is different
         if os.path.isfile(dest_file):
+            self._logger.debug(f'Checking media item "{media_item_meta["name"]}"')
             file_stat = os.stat(dest_file)
 
             if file_stat.st_mtime != modify_date_ts:
+                self._logger.debug(f'Removing media item "{media_item_meta["name"]}"')
                 os.remove(dest_file)
             else:
                 self._logger.debug(f'Sync for media item "{media_item_meta["name"]}" skipped. File already exists')
