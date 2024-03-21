@@ -4,6 +4,7 @@ import asyncio
 import requests
 import tempfile
 import shutil
+import traceback
 from datetime import datetime
 from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
@@ -385,6 +386,7 @@ class MediaItems:
             if t.exception():
                 self._logger.error(f'Sync for media item #{t.get_name()} failed')
                 self._logger.debug(t.exception(), exc_info=True)
+                self._logger.debug(traceback.print_exc())
                 self._model.update_media_item_meta(t.get_name(), status='sync_error')
 
                 info.increment(failed=1)
