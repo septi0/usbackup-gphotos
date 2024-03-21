@@ -383,8 +383,7 @@ class MediaItems:
         # update items status based on async tasks results
         for t in tasks:
             if t.exception():
-                self._logger.error(f'Sync for media item #{t.get_name()} failed')
-                print(t.exception())
+                self._logger.error(f'Sync for media item #{t.get_name()} failed. {t.exception()}')
                 self._model.update_media_item_meta(t.get_name(), status='sync_error')
 
                 info.increment(failed=1)
@@ -403,6 +402,7 @@ class MediaItems:
 
     async def _sync_item(self, media_item_meta: dict, media_item: dict) -> str:
         if media_item.get('error'):
+            self._logger.error(f'Sync for media item "{media_item_meta["name"]}" failed. {media_item["error"]}')
             raise ValueError(media_item["error"])
         
         download_url = media_item.get('baseUrl')
@@ -448,9 +448,11 @@ class MediaItems:
 
         # create tmp file name
         # we use a tmp file so we can move it to dest file after download is complete to avoid partial/incomplete files
+        self._logger.debug(f'Creating tmp file for media item "{media_item_meta["name"]}"')
         tmp_file = tempfile.NamedTemporaryFile(delete=False).name
 
         # download file
+        self._logger.debug(f'Downloading media item "{media_item_meta["name"]}"')
         await asyncio.to_thread(self._download_item, download_url, tmp_file)
 
         if not os.path.isdir(dest_path):
