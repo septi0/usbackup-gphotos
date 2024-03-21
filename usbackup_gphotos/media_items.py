@@ -456,16 +456,12 @@ class MediaItems:
         # move tmp file to dest file
         # Note: don't use os.rename() as it will fail if directory is on a different filesystem
         # copy file
-        shutil.copy2(tmp_file, dest_file)
+        shutil.copyfile(tmp_file, dest_file)
         # remove tmp file
         os.remove(tmp_file)
 
         # set file create / modify time
         os.utime(dest_file, (create_date_ts, modify_date_ts))
-
-        # set permissions
-        # self._logger.debug(f'Setting media item "{media_item_meta["name"]}" permissions')
-        # os.chmod(dest_file, 0o644)
 
         return 'synced'
 
