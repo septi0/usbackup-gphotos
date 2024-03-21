@@ -402,7 +402,6 @@ class MediaItems:
 
     async def _sync_item(self, media_item_meta: dict, media_item: dict) -> str:
         if media_item.get('error'):
-            self._logger.error(f'Sync for media item "{media_item_meta["name"]}" failed. {media_item["error"]}')
             raise ValueError(media_item["error"])
         
         download_url = media_item.get('baseUrl')
@@ -428,11 +427,9 @@ class MediaItems:
 
         # if file already exists, remove it if mtime is different
         if os.path.isfile(dest_file):
-            self._logger.debug(f'Checking media item "{media_item_meta["name"]}"')
             file_stat = os.stat(dest_file)
 
             if file_stat.st_mtime != modify_date_ts:
-                self._logger.debug(f'Removing media item "{media_item_meta["name"]}"')
                 os.remove(dest_file)
             else:
                 self._logger.debug(f'Sync for media item "{media_item_meta["name"]}" skipped. File already exists')
@@ -448,29 +445,27 @@ class MediaItems:
 
         # create tmp file name
         # we use a tmp file so we can move it to dest file after download is complete to avoid partial/incomplete files
-        self._logger.debug(f'Creating tmp file for media item "{media_item_meta["name"]}"')
         tmp_file = tempfile.NamedTemporaryFile(delete=False).name
 
         # download file
-        self._logger.debug(f'Downloading media item "{media_item_meta["name"]}"')
         await asyncio.to_thread(self._download_item, download_url, tmp_file)
 
         if not os.path.isdir(dest_path):
-            self._logger.debug(f'Creating directory "{dest_path}"')
             os.makedirs(dest_path)
 
         # move tmp file to dest file
         # Note: don't use os.rename() as it will fail if directory is on a different filesystem
-        self._logger.debug(f'Moving media item "{media_item_meta["name"]}" to "{dest_file}"')
-        shutil.move(tmp_file, dest_file)
+        # copy file
+        shutil.copy2(tmp_file, dest_file)
+        # remove tmp file
+        os.remove(tmp_file)
 
         # set file create / modify time
-        self._logger.debug(f'Setting media item "{media_item_meta["name"]}" create / modify time')
         os.utime(dest_file, (create_date_ts, modify_date_ts))
 
         # set permissions
-        self._logger.debug(f'Setting media item "{media_item_meta["name"]}" permissions')
-        os.chmod(dest_file, 0o644)
+        # self._logger.debug(f'Setting media item "{media_item_meta["name"]}" permissions')
+        # os.chmod(dest_file, 0o644)
 
         return 'synced'
 
