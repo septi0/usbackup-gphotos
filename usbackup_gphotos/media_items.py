@@ -266,8 +266,8 @@ class MediaItems:
         else:
             self._logger.debug(f'Deletion for media item "{media_item_meta["name"]}" skipped. File not found')
 
-    def _gen_path_by_cdate(self, date: str) -> str:
-        date = datetime.strptime(date, '%Y-%m-%dT%H:%M:%S.%fZ')
+    def _gen_path_by_cdate(self, date: str, date_format: str) -> str:
+        date = datetime.strptime(date, date_format)
 
         year = date.strftime('%Y')
         month = date.strftime('%m')
@@ -311,9 +311,11 @@ class MediaItems:
         return False
     
     def _add_item(self, media_item: dict) -> int:
-        path = self._gen_path_by_cdate(media_item['mediaMetadata']['creationTime'])
+        cdate_format = self._detectDateFormat(media_item['mediaMetadata']['creationTime'])
+        
+        path = self._gen_path_by_cdate(media_item['mediaMetadata']['creationTime'], cdate_format)
         cname = self._get_canonicalized_name(media_item['filename'], path)
-        create_date = datetime.strptime(media_item['mediaMetadata']['creationTime'], '%Y-%m-%dT%H:%M:%S.%fZ').strftime('%Y-%m-%d %H:%M:%S')
+        create_date = datetime.strptime(media_item['mediaMetadata']['creationTime'], cdate_format).strftime('%Y-%m-%d %H:%M:%S')
         index_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
         self._logger.debug(f'Indexing media item "{media_item["filename"]}"')
@@ -520,3 +522,9 @@ class MediaItems:
                         info.increment(deleted=1)
 
         return info
+
+    def _detectDateFormat(date: str) -> str:
+        if date.find('.') != -1:
+            return '%Y-%m-%dT%H:%M:%S.%fZ'
+        else:
+            return '%Y-%m-%dT%H:%M:%SZ'
