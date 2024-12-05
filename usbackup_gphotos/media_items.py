@@ -523,7 +523,7 @@ class MediaItems:
 
         return info
 
-    def _detectDateFormat(date: str) -> str:
+    def _detectDateFormat(self, date: str) -> str:
         if date.find('.') != -1:
             return '%Y-%m-%dT%H:%M:%S.%fZ'
         else:
