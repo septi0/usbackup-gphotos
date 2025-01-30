@@ -120,7 +120,8 @@ class UsBackupGPhotosIdentity:
         storage_file = os.path.join(data_dir, 'usbackup_gphotos.db')
         auth_file = config.get('auth_file', '')
         auth_scopes = [
-            'https://www.googleapis.com/auth/photoslibrary.readonly.appcreateddata',
+            'https://www.googleapis.com/auth/photoslibrary.readonly',
+            'https://www.googleapis.com/auth/photoslibrary.sharing',
         ]
 
         storage = Storage(storage_file)
