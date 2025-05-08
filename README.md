@@ -1,5 +1,8 @@
 # UsBackup-GPhotos
 
+## WARNING!
+The software no longer works as Google has changed the API permissions and fetching the media items outside of the app's scope is not possible anymore. Repository kept for historical reasons only.
+
 ## Description
 
 **UsBackup-GPhotos** is a tool for downloading and syncing media items and albums from Google Photos to your local storage. It's useful for creating backups of your photos, accessing memories offline or organizing your personal digital life. This tool ensures that Google Photos is always in sync with your local storage by downloading newly added media items and albums while optionally deleting obsolete ones from the local storage.
